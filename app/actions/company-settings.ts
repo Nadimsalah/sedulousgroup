@@ -89,6 +89,19 @@ export async function updateCompanySettings(settings: Partial<CompanySettings>) 
 
     if (error) {
       console.error("[v0] Error updating company settings:", error)
+      console.error("[v0] Error code:", error.code)
+      console.error("[v0] Error message:", error.message)
+      console.error("[v0] Error details:", error.details)
+      console.error("[v0] Error hint:", error.hint)
+      
+      // If table doesn't exist, provide helpful error message
+      if (error.code === "42P01" || error.message?.includes("does not exist") || error.message?.includes("schema cache")) {
+        return {
+          success: false,
+          error: "Company settings table does not exist. Go to /admin/settings/setup to create the required tables.",
+        }
+      }
+      
       throw new Error(`Failed to update company settings: ${error.message}`)
     }
 

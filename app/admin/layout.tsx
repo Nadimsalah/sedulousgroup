@@ -33,6 +33,8 @@ import {
   ChevronRight,
   FileText,
   Camera,
+  CheckCircle,
+  ImageIcon,
 } from "lucide-react"
 import { Toaster } from "@/components/ui/sonner"
 import { NotificationDropdown } from "@/components/notification-dropdown"
@@ -109,6 +111,7 @@ export default function AdminLayout({
   const navigation = [
     { name: "Dashboard", href: "/admin", icon: Home },
     { name: "Bookings Schedule", href: "/admin/requests", icon: Calendar },
+    { name: "Active Bookings", href: "/admin/active-bookings", icon: CheckCircle },
     {
       name: "Vehicles",
       icon: Car,
@@ -126,6 +129,7 @@ export default function AdminLayout({
     { name: "Vendors", href: "/admin/vendors", icon: Wrench },
     { name: "Deposits", href: "/admin/deposits", icon: CreditCard },
     { name: "PCNs / Tickets", href: "/admin/pcn-tickets", icon: Ticket },
+    { name: "Stories", href: "/admin/stories", icon: ImageIcon },
     { name: "Settings", href: "/admin/settings", icon: Settings },
   ]
 

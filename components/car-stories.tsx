@@ -6,6 +6,7 @@ import Link from "next/link"
 import { X, Pause, Play, Volume2, VolumeX, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { getStoriesAction, Story } from "@/app/actions/database"
+import { VideoThumbnail } from "@/components/video-thumbnail"
 
 export function CarStories({ rentalType }: { rentalType?: "Rent" | "Flexi Hire" | "PCO Hire" | "Sales" }) {
   const [carStories, setCarStories] = useState<Story[]>([])
@@ -399,18 +400,36 @@ export function CarStories({ rentalType }: { rentalType?: "Rent" | "Flexi Hire" 
                   <div className="h-full w-full rounded-full bg-black p-[3px]">
                     <div className="relative h-full w-full overflow-hidden rounded-full">
                       {thumbnailLoading[story.id] && (
-                        <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-white/5 via-white/10 to-white/5" />
+                        <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-white/5 via-white/10 to-white/5 z-10" />
                       )}
-                      <Image
-                        src={story.thumbnail || "/placeholder.svg"}
-                        alt={story.title}
-                        fill
-                        className="object-cover"
-                        onLoad={() => setThumbnailLoading(prev => ({...prev, [story.id]: false}))}
-                        onError={() => {
-                          setThumbnailLoading(prev => ({...prev, [story.id]: false}))
-                        }}
-                      />
+                      {story.thumbnail ? (
+                        // If thumbnail is a video URL (no thumbnail was saved), generate it
+                        // Otherwise, use the saved thumbnail image
+                        isVideo(story.thumbnail) ? (
+                          <VideoThumbnail
+                            videoUrl={story.thumbnail}
+                            alt={story.title}
+                            fill
+                            className="object-cover rounded-full"
+                            onLoad={() => setThumbnailLoading(prev => ({...prev, [story.id]: false}))}
+                          />
+                        ) : (
+                          <Image
+                            src={story.thumbnail}
+                            alt={story.title}
+                            fill
+                            className="object-cover"
+                            onLoad={() => setThumbnailLoading(prev => ({...prev, [story.id]: false}))}
+                            onError={() => {
+                              setThumbnailLoading(prev => ({...prev, [story.id]: false}))
+                            }}
+                          />
+                        )
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                          <ImageIcon className="h-8 w-8 text-white/40" />
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -536,32 +555,26 @@ export function CarStories({ rentalType }: { rentalType?: "Rent" | "Flexi Hire" 
                   {storyImageLoading && (
                     <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-white/5 via-white/10 to-white/5 z-10" />
                   )}
-                  <video
-                    key={`${selectedStory.id}-${currentIndex}`}
-                    ref={videoRef}
-                    src={selectedStory.stories[currentIndex].image || ''}
-                    className="w-full h-full object-contain"
-                    autoPlay
-                    muted={isMuted}
-                    playsInline
-                    loop={false}
-                    onLoadedData={() => {
-                      console.log('[v0] Video loaded successfully')
-                      setStoryImageLoading(false)
-                    }}
-                    onWaiting={handleVideoWaiting}
-                    onCanPlay={handleVideoCanPlay}
-                    onPlaying={handleVideoPlaying}
-                    onPause={handleVideoPause}
-                    onSeeking={handleVideoSeeking}
-                    onSeeked={handleVideoSeeked}
-                    onEnded={handleNext}
-                    onError={(e) => {
-                      console.error('[v0] Video failed to load:', e)
-                      setStoryImageLoading(false)
-                      setIsVideoBuffering(false)
-                    }}
-                  />
+                  {/* For videos, show thumbnail - if story has a saved thumbnail for this video, use it, otherwise generate */}
+                  {selectedStory.thumbnail && !isVideo(selectedStory.thumbnail) && currentIndex === 0 ? (
+                    <Image
+                      src={selectedStory.thumbnail}
+                      alt={`${selectedStory.title} - Story ${currentIndex + 1}`}
+                      fill
+                      className="object-contain"
+                      onLoad={() => setStoryImageLoading(false)}
+                      onError={() => {
+                        setStoryImageLoading(false)
+                      }}
+                    />
+                  ) : (
+                    <VideoThumbnail
+                      videoUrl={selectedStory.stories[currentIndex].image || ''}
+                      alt={`${selectedStory.title} - Story ${currentIndex + 1}`}
+                      fill
+                      className="object-contain"
+                    />
+                  )}
                 </>
               ) : (
                 <>

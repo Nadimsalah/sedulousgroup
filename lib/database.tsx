@@ -1656,7 +1656,7 @@ class Database {
     return true
   }
 
-  async updateAgreementSignature(agreementId: string, signatureUrl: string, customerName: string): Promise<boolean> {
+  async updateAgreementSignature(agreementId: string, signatureUrl: string, customerName: string, signatureBase64?: string): Promise<boolean> {
     const supabase = await this.getAdminClient()
     if (!supabase) return false
 
@@ -1682,20 +1682,28 @@ class Database {
       // For now, store customer signature URL in customer_signature_data if admin signature is not there
       // Otherwise, we need to store it separately
       signed_at: new Date().toISOString(),
-      status: "signed",
+      status: "pending", // Will be updated to "signed" when PDF is generated
       updated_at: new Date().toISOString(),
     }
 
     // Store customer signature URL - preserve admin signature
+    // Prefer base64 if available (for server-side PDF generation)
+    const customerSignatureToStore = signatureBase64 || signatureUrl
+    
+    // Always store customer signature in customer_signature_data as JSON to preserve both signatures
     if (isAdminSignature) {
       // Admin signature is in customer_signature_data (base64)
-      // Store customer signature URL in signed_agreement_url temporarily
-      // We'll move it to customer_signature_data after PDF generation
-      updateData.signed_agreement_url = signatureUrl // Store customer signature URL here temporarily
+      // Store both signatures in a JSON structure
+      updateData.customer_signature_data = JSON.stringify({
+        admin_signature: adminSignature,
+        customer_signature: customerSignatureToStore // Store base64 if available, otherwise URL
+      })
+      updateData.signed_agreement_url = signatureUrl // Always store URL here for reference
     } else {
       // No admin signature, store customer signature in customer_signature_data
-      updateData.customer_signature_data = signatureUrl
-      updateData.signed_agreement_url = signatureUrl // Also store here for consistency
+      // Prefer base64 if available
+      updateData.customer_signature_data = customerSignatureToStore
+      updateData.signed_agreement_url = signatureUrl // Also store URL here for consistency
     }
 
     const { error } = await supabase
@@ -1734,34 +1742,75 @@ class Database {
     inspection: Omit<VehicleInspection, "id" | "createdAt" | "updatedAt">,
   ): Promise<VehicleInspection | null> {
     const supabase = await this.getAdminClient()
-    if (!supabase) return null
-
-    const { data, error } = await supabase
-      .from("vehicle_inspections")
-      .insert({
-        agreement_id: inspection.agreementId,
-        booking_id: inspection.bookingId,
-        vehicle_id: inspection.vehicleId,
-        inspection_type: inspection.inspectionType,
-        odometer_reading: inspection.odometerReading,
-        fuel_level: inspection.fuelLevel,
-        exterior_photos: inspection.exteriorPhotos,
-        interior_photos: inspection.interiorPhotos,
-        damage_photos: inspection.damagePhotos,
-        video_urls: inspection.videoUrls,
-        damage_notes: inspection.damageNotes,
-        overall_condition: inspection.overallCondition,
-        inspected_by: inspection.inspectedBy,
-        inspected_at: inspection.inspectedAt,
-      })
-      .select()
-      .single()
-
-    if (error || !data) {
-      console.error("[v0] Error creating inspection:", error)
+    if (!supabase) {
+      console.error("[v0] No admin client available for creating inspection")
       return null
     }
 
+    console.log("[v0] Creating inspection:", {
+      agreement_id: inspection.agreementId,
+      booking_id: inspection.bookingId,
+      vehicle_id: inspection.vehicleId,
+      inspection_type: inspection.inspectionType,
+      odometer_reading: inspection.odometerReading,
+      fuel_level: inspection.fuelLevel,
+      exterior_photos_count: inspection.exteriorPhotos?.length || 0,
+      interior_photos_count: inspection.interiorPhotos?.length || 0,
+      damage_photos_count: inspection.damagePhotos?.length || 0,
+    })
+
+    // Prepare insert data
+    const insertData: any = {
+      agreement_id: inspection.agreementId,
+      booking_id: inspection.bookingId,
+      vehicle_id: inspection.vehicleId,
+      inspection_type: inspection.inspectionType,
+      odometer_reading: inspection.odometerReading,
+      fuel_level: inspection.fuelLevel,
+      exterior_photos: inspection.exteriorPhotos || [],
+      interior_photos: inspection.interiorPhotos || [],
+      damage_photos: inspection.damagePhotos || [],
+      video_urls: inspection.videoUrls || [],
+      damage_notes: inspection.damageNotes || null,
+      overall_condition: inspection.overallCondition,
+      inspected_at: inspection.inspectedAt,
+    }
+
+    // Only include inspected_by if it's a valid UUID string
+    if (inspection.inspectedBy && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(inspection.inspectedBy)) {
+      insertData.inspected_by = inspection.inspectedBy
+    } else {
+      insertData.inspected_by = null
+    }
+
+    console.log("[v0] Inserting inspection with data:", {
+      ...insertData,
+      exterior_photos: `[${insertData.exterior_photos.length} photos]`,
+      interior_photos: `[${insertData.interior_photos.length} photos]`,
+      damage_photos: `[${insertData.damage_photos.length} photos]`,
+    })
+
+    const { data, error } = await supabase
+      .from("vehicle_inspections")
+      .insert(insertData)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("[v0] Error creating inspection:", error)
+      console.error("[v0] Error code:", error.code)
+      console.error("[v0] Error message:", error.message)
+      console.error("[v0] Error details:", error.details)
+      console.error("[v0] Error hint:", error.hint)
+      throw new Error(`Failed to create inspection: ${error.message}${error.details ? ` (${error.details})` : ""}${error.hint ? ` Hint: ${error.hint}` : ""}`)
+    }
+
+    if (!data) {
+      console.error("[v0] No data returned from inspection creation")
+      throw new Error("Failed to create inspection: No data returned from database")
+    }
+
+    console.log("[v0] Inspection created successfully:", data.id)
     return this.mapInspectionFromDb(data)
   }
 
@@ -1801,55 +1850,152 @@ class Database {
     return (data || []).map(this.mapInspectionFromDb)
   }
 
-  // PCNTicket methods
-  async createPCNTicket(ticket: Omit<PCNTicket, "id" | "createdAt" | "updatedAt">): Promise<PCNTicket | null> {
-    const supabase = await this.getAdminClient()
+  async getInspectionsByBooking(bookingId: string): Promise<VehicleInspection[]> {
+    const supabase = await this.getSupabaseClient()
+    if (!supabase) return []
+
+    const { data, error } = await supabase
+      .from("vehicle_inspections")
+      .select("*")
+      .eq("booking_id", bookingId)
+      .order("inspected_at", { ascending: false })
+
+    if (error) {
+      console.error("[v0] Error fetching inspections by booking:", error)
+      return []
+    }
+
+    return (data || []).map(this.mapInspectionFromDb)
+  }
+
+  async getInspectionsByAgreement(agreementId: string): Promise<VehicleInspection[]> {
+    return this.getInspectionsByAgreementId(agreementId)
+  }
+
+  async getInspectionById(inspectionId: string): Promise<VehicleInspection | null> {
+    const supabase = await this.getSupabaseClient()
     if (!supabase) return null
 
     const { data, error } = await supabase
-      .from("pcn_tickets")
-      .insert({
-        agreement_id: ticket.agreementId,
-        booking_id: ticket.bookingId,
-        customer_id: ticket.customerId,
-        vehicle_id: ticket.vehicleId,
-        ticket_type: ticket.ticketType,
-        ticket_number: ticket.ticketNumber,
-        issue_date: ticket.issueDate,
-        due_date: ticket.dueDate,
-        amount: ticket.amount,
-        status: ticket.status,
-        ticket_document_url: ticket.ticketDocumentUrl,
-        notes: ticket.notes,
-        uploaded_by: ticket.uploadedBy,
-      })
-      .select()
+      .from("vehicle_inspections")
+      .select("*")
+      .eq("id", inspectionId)
       .single()
 
     if (error || !data) {
-      console.error("[v0] Error creating PCN ticket:", error)
+      console.error("[v0] Error fetching inspection by ID:", error)
       return null
     }
 
+    return this.mapInspectionFromDb(data)
+  }
+
+  // PCNTicket methods
+  async createPCNTicket(ticket: Omit<PCNTicket, "id" | "createdAt" | "updatedAt">): Promise<PCNTicket | null> {
+    const supabase = await this.getAdminClient()
+    if (!supabase) {
+      console.error("[v0] No admin client available for creating PCN ticket")
+      throw new Error("No admin client available")
+    }
+
+    console.log("[v0] Creating PCN ticket:", {
+      agreement_id: ticket.agreementId,
+      booking_id: ticket.bookingId,
+      ticket_type: ticket.ticketType,
+      amount: ticket.amount,
+    })
+
+    // Format dates properly - ensure issue_date is in YYYY-MM-DD format
+    let issueDate = ticket.issueDate
+    if (issueDate && issueDate.includes("T")) {
+      // If it's a datetime string, extract just the date part
+      issueDate = issueDate.split("T")[0]
+    }
+
+    let dueDate = ticket.dueDate
+    if (dueDate && dueDate.includes("T")) {
+      dueDate = dueDate.split("T")[0]
+    }
+
+    const insertData: any = {
+      agreement_id: ticket.agreementId,
+      booking_id: ticket.bookingId,
+      ticket_type: ticket.ticketType,
+      issue_date: issueDate,
+      amount: ticket.amount,
+      status: ticket.status || "pending",
+      ticket_document_url: ticket.ticketDocumentUrl,
+    }
+
+    // Only include optional fields if they have values
+    if (ticket.customerId) insertData.customer_id = ticket.customerId
+    if (ticket.vehicleId) insertData.vehicle_id = ticket.vehicleId
+    if (ticket.ticketNumber) insertData.ticket_number = ticket.ticketNumber
+    if (dueDate) insertData.due_date = dueDate
+    if (ticket.notes) insertData.notes = ticket.notes
+    if (ticket.uploadedBy) insertData.uploaded_by = ticket.uploadedBy
+
+    const { data, error } = await supabase
+      .from("pcn_tickets")
+      .insert(insertData)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("[v0] Error creating PCN ticket:", error)
+      console.error("[v0] Error code:", error.code)
+      console.error("[v0] Error message:", error.message)
+      console.error("[v0] Error details:", error.details)
+      throw new Error(`Failed to create PCN ticket: ${error.message}${error.details ? ` (${error.details})` : ""}`)
+    }
+
+    if (!data) {
+      console.error("[v0] No data returned from PCN ticket creation")
+      throw new Error("Failed to create PCN ticket: No data returned from database")
+    }
+
+    console.log("[v0] PCN ticket created successfully:", data.id)
     return this.mapPCNFromDb(data)
   }
 
   async getPCNsByAgreementId(agreementId: string): Promise<PCNTicket[]> {
-    const supabase = await this.getSupabaseClient()
-    if (!supabase) return []
+    const supabase = await this.getAdminClient()
+    if (!supabase) {
+      console.error("[Database] No admin client available for fetching PCN tickets")
+      return []
+    }
+
+    if (!agreementId) {
+      console.warn("[Database] No agreement ID provided to getPCNsByAgreementId")
+      return []
+    }
+
+    console.log("[Database] Fetching PCN tickets for agreement:", agreementId)
 
     const { data, error } = await supabase
       .from("pcn_tickets")
       .select("*")
       .eq("agreement_id", agreementId)
-      .order("issue_date", { ascending: false })
+      .order("created_at", { ascending: false })
 
     if (error) {
-      console.error("[v0] Error fetching PCN tickets:", error)
+      console.error("[Database] Error fetching PCN tickets:", error)
+      console.error("[Database] Error code:", error.code)
+      console.error("[Database] Error message:", error.message)
+      console.error("[Database] Error details:", error.details)
+      console.error("[Database] Error hint:", error.hint)
       return []
     }
 
-    return (data || []).map(this.mapPCNFromDb)
+    console.log(`[Database] Found ${data?.length || 0} PCN tickets for agreement ${agreementId}`)
+    return (data || []).map((ticket) => {
+      try {
+        return this.mapPCNFromDb(ticket)
+      } catch (err) {
+        console.error("[Database] Error mapping PCN ticket:", err, ticket)
+        return null
+      }
+    }).filter((ticket): ticket is PCNTicket => ticket !== null)
   }
 
   async updatePCNTicket(id: string, updates: Partial<PCNTicket>): Promise<PCNTicket | null> {
@@ -1878,37 +2024,62 @@ class Database {
   // DamageReport methods
   async createDamageReport(report: Omit<DamageReport, "id" | "createdAt" | "updatedAt">): Promise<DamageReport | null> {
     const supabase = await this.getAdminClient()
-    if (!supabase) return null
+    if (!supabase) {
+      console.error("[v0] No admin client available for creating damage report")
+      throw new Error("No admin client available")
+    }
+
+    console.log("[v0] Creating damage report:", {
+      vehicle_id: report.vehicleId,
+      damage_type: report.damageType,
+      severity: report.severity,
+      description: report.description?.substring(0, 50),
+      photos_count: report.damagePhotos?.length || 0,
+    })
+
+    const insertData: any = {
+      vehicle_id: report.vehicleId,
+      damage_type: report.damageType,
+      severity: report.severity,
+      description: report.description,
+      incident_date: report.incidentDate,
+      reported_date: report.reportedDate,
+      damage_photos: report.damagePhotos || [],
+      damage_videos: report.damageVideos || [],
+      repair_status: report.repairStatus || "pending",
+    }
+
+    // Only include optional fields if they have values
+    if (report.agreementId) insertData.agreement_id = report.agreementId
+    if (report.bookingId) insertData.booking_id = report.bookingId
+    if (report.customerId) insertData.customer_id = report.customerId
+    if (report.locationOnVehicle) insertData.location_on_vehicle = report.locationOnVehicle
+    if (report.estimatedCost !== undefined) insertData.estimated_cost = report.estimatedCost
+    if (report.responsibleParty) insertData.responsible_party = report.responsibleParty
+    if (report.notes) insertData.notes = report.notes
+    if (report.reportedBy) insertData.reported_by = report.reportedBy
 
     const { data, error } = await supabase
       .from("damage_reports")
-      .insert({
-        agreement_id: report.agreementId,
-        booking_id: report.bookingId,
-        vehicle_id: report.vehicleId,
-        customer_id: report.customerId,
-        damage_type: report.damageType,
-        severity: report.severity,
-        description: report.description,
-        location_on_vehicle: report.locationOnVehicle,
-        incident_date: report.incidentDate,
-        reported_date: report.reportedDate,
-        damage_photos: report.damagePhotos,
-        damage_videos: report.damageVideos,
-        estimated_cost: report.estimatedCost,
-        repair_status: report.repairStatus,
-        responsible_party: report.responsibleParty,
-        notes: report.notes,
-        reported_by: report.reportedBy,
-      })
+      .insert(insertData)
       .select()
       .single()
 
-    if (error || !data) {
+    if (error) {
       console.error("[v0] Error creating damage report:", error)
-      return null
+      console.error("[v0] Error code:", error.code)
+      console.error("[v0] Error message:", error.message)
+      console.error("[v0] Error details:", error.details)
+      console.error("[v0] Error hint:", error.hint)
+      throw new Error(`Failed to create damage report: ${error.message}${error.details ? ` (${error.details})` : ""}${error.hint ? ` Hint: ${error.hint}` : ""}`)
     }
 
+    if (!data) {
+      console.error("[v0] No data returned from damage report creation")
+      throw new Error("Failed to create damage report: No data returned from database")
+    }
+
+    console.log("[v0] Damage report created successfully:", data.id)
     return this.mapDamageReportFromDb(data)
   }
 
@@ -1947,29 +2118,51 @@ class Database {
 
   async createVendor(vendor: Omit<Vendor, "id" | "createdAt" | "updatedAt">): Promise<Vendor | null> {
     const supabase = await this.getAdminClient()
-    if (!supabase) return null
+    if (!supabase) {
+      console.error("[v0] No admin client available for creating vendor")
+      throw new Error("No admin client available")
+    }
+
+    console.log("[v0] Creating vendor:", {
+      name: vendor.name,
+      vendor_type: vendor.vendorType,
+      email: vendor.email,
+    })
+
+    const insertData: any = {
+      name: vendor.name,
+      vendor_type: vendor.vendorType,
+      is_active: vendor.isActive !== undefined ? vendor.isActive : true,
+    }
+
+    // Only include optional fields if they have values
+    if (vendor.contactPerson) insertData.contact_person = vendor.contactPerson
+    if (vendor.email) insertData.email = vendor.email
+    if (vendor.phone) insertData.phone = vendor.phone
+    if (vendor.address) insertData.address = vendor.address
+    if (vendor.rating !== undefined) insertData.rating = vendor.rating
+    if (vendor.notes) insertData.notes = vendor.notes
 
     const { data, error } = await supabase
       .from("vendors")
-      .insert({
-        name: vendor.name,
-        vendor_type: vendor.vendorType,
-        contact_person: vendor.contactPerson,
-        email: vendor.email,
-        phone: vendor.phone,
-        address: vendor.address,
-        rating: vendor.rating,
-        notes: vendor.notes,
-        is_active: vendor.isActive,
-      })
+      .insert(insertData)
       .select()
       .single()
 
-    if (error || !data) {
+    if (error) {
       console.error("[v0] Error creating vendor:", error)
-      return null
+      console.error("[v0] Error code:", error.code)
+      console.error("[v0] Error message:", error.message)
+      console.error("[v0] Error details:", error.details)
+      throw new Error(`Failed to create vendor: ${error.message}${error.details ? ` (${error.details})` : ""}`)
     }
 
+    if (!data) {
+      console.error("[v0] No data returned from vendor creation")
+      throw new Error("Failed to create vendor: No data returned from database")
+    }
+
+    console.log("[v0] Vendor created successfully:", data.id)
     return this.mapVendorFromDb(data)
   }
 
@@ -2066,28 +2259,41 @@ class Database {
   }
 
   private mapPCNFromDb(data: any): PCNTicket {
+    if (!data) {
+      console.error("[Database] mapPCNFromDb called with null/undefined data")
+      throw new Error("Cannot map null PCN ticket data")
+    }
+
+    // Format dates - ensure they're strings
+    const formatDate = (date: any): string => {
+      if (!date) return ""
+      if (typeof date === "string") return date
+      if (date instanceof Date) return date.toISOString().split("T")[0]
+      return String(date)
+    }
+
     return {
-      id: data.id,
-      agreementId: data.agreement_id,
-      bookingId: data.booking_id,
-      customerId: data.customer_id,
-      vehicleId: data.vehicle_id,
-      ticketType: data.ticket_type,
-      ticketNumber: data.ticket_number,
-      issueDate: data.issue_date,
-      dueDate: data.due_date,
-      amount: Number(data.amount),
-      status: data.status,
-      paidBy: data.paid_by,
-      paidAt: data.paid_at,
-      ticketDocumentUrl: data.ticket_document_url,
-      proofOfPaymentUrl: data.proof_of_payment_url,
-      sentToCustomerAt: data.sent_to_customer_at,
-      customerNotified: data.customer_notified,
-      notes: data.notes,
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
-      uploadedBy: data.uploaded_by,
+      id: data.id || "",
+      agreementId: data.agreement_id || "",
+      bookingId: data.booking_id || "",
+      customerId: data.customer_id || undefined,
+      vehicleId: data.vehicle_id || undefined,
+      ticketType: data.ticket_type || "other",
+      ticketNumber: data.ticket_number || undefined,
+      issueDate: formatDate(data.issue_date),
+      dueDate: data.due_date ? formatDate(data.due_date) : undefined,
+      amount: Number(data.amount) || 0,
+      status: data.status || "pending",
+      paidBy: data.paid_by || undefined,
+      paidAt: data.paid_at || undefined,
+      ticketDocumentUrl: data.ticket_document_url || "",
+      proofOfPaymentUrl: data.proof_of_payment_url || undefined,
+      sentToCustomerAt: data.sent_to_customer_at || undefined,
+      customerNotified: Boolean(data.customer_notified),
+      notes: data.notes || undefined,
+      createdAt: data.created_at || new Date().toISOString(),
+      updatedAt: data.updated_at || new Date().toISOString(),
+      uploadedBy: data.uploaded_by || undefined,
     }
   }
 

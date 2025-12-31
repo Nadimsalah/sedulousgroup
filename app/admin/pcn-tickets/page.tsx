@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { getBookingsAction } from "@/app/actions/requests"
+import { getAllBookingsAction } from "@/app/actions/bookings"
 import { getCarsAction } from "@/app/actions/database"
 import { getAgreementsByBookingAction } from "@/app/actions/agreements"
 import {
@@ -46,28 +46,58 @@ export default function PCNTicketsPage() {
 
   const loadData = async () => {
     setIsLoading(true)
-    const [bookingsData, carsData] = await Promise.all([getBookingsAction(), getCarsAction()])
+    try {
+      // Fetch bookings and cars
+      const [bookingsResult, carsData] = await Promise.all([
+        getAllBookingsAction(),
+        getCarsAction(),
+      ])
 
-    const activeBookings = bookingsData.filter((b: any) => b.status === "On Rent" || b.status === "Completed")
-    setBookings(activeBookings)
-    setCars(carsData)
+      // Extract bookings from result
+      const allBookings = bookingsResult.success ? bookingsResult.data : []
+      
+      // Filter for active bookings
+      const activeBookings = allBookings.filter((b: any) => {
+        const status = (b.status || "").toLowerCase()
+        return ["active", "approved", "confirmed", "on rent", "completed"].includes(status)
+      })
 
-    const agreementsData: Record<string, any[]> = {}
-    const ticketsData: Record<string, any[]> = {}
+      setBookings(activeBookings)
+      setCars(carsData || [])
 
-    for (const booking of activeBookings) {
-      const bookingAgreements = await getAgreementsByBookingAction(booking.id)
-      agreementsData[booking.id] = bookingAgreements
+      // Load agreements and tickets for each booking
+      const agreementsData: Record<string, any[]> = {}
+      const ticketsData: Record<string, any[]> = {}
 
-      for (const agreement of bookingAgreements) {
-        const agreementTickets = await getPCNsByAgreementAction(agreement.id)
-        ticketsData[agreement.id] = agreementTickets
+      for (const booking of activeBookings) {
+        try {
+          const bookingAgreements = await getAgreementsByBookingAction(booking.id)
+          agreementsData[booking.id] = bookingAgreements || []
+
+          // Load tickets for each agreement
+          for (const agreement of bookingAgreements || []) {
+            try {
+              const agreementTickets = await getPCNsByAgreementAction(agreement.id)
+              ticketsData[agreement.id] = agreementTickets || []
+            } catch (err) {
+              console.error(`Error loading tickets for agreement ${agreement.id}:`, err)
+              ticketsData[agreement.id] = []
+            }
+          }
+        } catch (err) {
+          console.error(`Error loading agreements for booking ${booking.id}:`, err)
+          agreementsData[booking.id] = []
+        }
       }
-    }
 
-    setAgreements(agreementsData)
-    setTickets(ticketsData)
-    setIsLoading(false)
+      setAgreements(agreementsData)
+      setTickets(ticketsData)
+    } catch (error) {
+      console.error("Error loading data:", error)
+      toast.error("Failed to load PCN tickets data")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleFileUpload = async (file: File) => {
@@ -88,7 +118,7 @@ export default function PCNTicketsPage() {
       setTicketDocumentUrl(url)
       toast.success("Document uploaded successfully")
     } catch (error) {
-      console.error("[v0] Error uploading document:", error)
+      console.error("Error uploading document:", error)
       toast.error("Failed to upload document")
     }
 
@@ -115,47 +145,59 @@ export default function PCNTicketsPage() {
 
     setIsCreatingTicket(true)
 
-    const bookingAgreements = agreements[selectedBooking.id] || []
-    const agreement = bookingAgreements.find((a) => a.status === "Signed")
+    try {
+      // Get agreements for this booking
+      const bookingAgreements = agreements[selectedBooking.id] || []
+      
+      // Find signed/active agreement
+      const agreement = bookingAgreements.find((a: any) => {
+        const status = (a.status || "").toLowerCase()
+        return ["signed", "active", "confirmed"].includes(status)
+      })
 
-    if (!agreement) {
-      toast.error("No signed agreement found for this booking")
+      if (!agreement) {
+        toast.error("No signed agreement found for this booking")
+        setIsCreatingTicket(false)
+        return
+      }
+
+      const result = await createPCNTicketAction({
+        agreementId: agreement.id,
+        bookingId: selectedBooking.id,
+        customerId: selectedBooking.user_id || undefined,
+        vehicleId: selectedBooking.car_id || undefined,
+        ticketType,
+        ticketNumber: ticketNumber || undefined,
+        issueDate,
+        dueDate: dueDate || undefined,
+        amount: Number.parseFloat(amount),
+        ticketDocumentUrl,
+        notes: notes || undefined,
+        uploadedBy: "Admin",
+      })
+
+      if (result.success) {
+        toast.success("PCN Ticket created successfully!")
+        setShowCreateDialog(false)
+        setSelectedBooking(null)
+        // Reset form
+        setTicketType("parking")
+        setTicketNumber("")
+        setIssueDate("")
+        setDueDate("")
+        setAmount("")
+        setNotes("")
+        setTicketDocumentUrl("")
+        await loadData()
+      } else {
+        toast.error(result.error || "Failed to create ticket")
+      }
+    } catch (error) {
+      console.error("Error creating ticket:", error)
+      toast.error("Failed to create ticket")
+    } finally {
       setIsCreatingTicket(false)
-      return
     }
-
-    const result = await createPCNTicketAction({
-      agreementId: agreement.id,
-      bookingId: selectedBooking.id,
-      customerId: selectedBooking.userId,
-      vehicleId: selectedBooking.carId,
-      ticketType,
-      ticketNumber: ticketNumber || undefined,
-      issueDate,
-      dueDate: dueDate || undefined,
-      amount: Number.parseFloat(amount),
-      ticketDocumentUrl,
-      notes: notes || undefined,
-      uploadedBy: "Admin",
-    })
-
-    if (result.success) {
-      toast.success("PCN Ticket created successfully!")
-      setShowCreateDialog(false)
-      setSelectedBooking(null)
-      setTicketType("parking")
-      setTicketNumber("")
-      setIssueDate("")
-      setDueDate("")
-      setAmount("")
-      setNotes("")
-      setTicketDocumentUrl("")
-      await loadData()
-    } else {
-      toast.error(result.error || "Failed to create ticket")
-    }
-
-    setIsCreatingTicket(false)
   }
 
   const handleSendTicket = async (ticketId: string) => {
@@ -180,7 +222,8 @@ export default function PCNTicketsPage() {
     }
   }
 
-  const getCarName = (carId: string) => {
+  const getCarName = (carId: string | null | undefined) => {
+    if (!carId) return "Unknown Car"
     const car = cars.find((c) => c.id === carId)
     return car?.name || "Unknown Car"
   }
@@ -209,10 +252,12 @@ export default function PCNTicketsPage() {
 
   const filteredBookings = bookings.filter((booking) => {
     const searchLower = searchTerm.toLowerCase()
+    const carId = booking.car_id || booking.carId
+    const customerName = booking.customer_name || booking.customerName
     return (
-      booking.customerName?.toLowerCase().includes(searchLower) ||
+      customerName?.toLowerCase().includes(searchLower) ||
       booking.id.toLowerCase().includes(searchLower) ||
-      getCarName(booking.carId).toLowerCase().includes(searchLower)
+      getCarName(carId).toLowerCase().includes(searchLower)
     )
   })
 
@@ -313,16 +358,31 @@ export default function PCNTicketsPage() {
         <div className="grid gap-3">
           {filteredBookings.map((booking) => {
             const bookingAgreements = agreements[booking.id] || []
-            const agreement = bookingAgreements.find((a) => a.status === "Signed")
+            // Find signed/active agreement
+            const agreement = bookingAgreements.find((a: any) => {
+              const status = (a.status || "").toLowerCase()
+              return ["signed", "active", "confirmed"].includes(status)
+            })
             const agreementTickets = agreement ? tickets[agreement.id] || [] : []
+            const carId = booking.car_id || booking.carId
+            const customerName = booking.customer_name || booking.customerName
 
             return (
               <div key={booking.id} className="liquid-glass p-4 rounded-xl border border-white/10">
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-3 mb-3">
                   <div className="flex-1">
-                    <h3 className="font-semibold text-white">{getCarName(booking.carId)}</h3>
+                    <h3 className="font-semibold text-white">{getCarName(carId)}</h3>
                     <p className="text-sm text-white/60">Booking: {booking.id.substring(0, 8).toUpperCase()}</p>
-                    <p className="text-sm text-white/60">Customer: {booking.customerName}</p>
+                    <p className="text-sm text-white/60">Customer: {customerName}</p>
+                    {!agreement && bookingAgreements.length > 0 && (
+                      <p className="text-xs text-yellow-500 mt-1">⚠️ Agreement exists but not signed</p>
+                    )}
+                    {bookingAgreements.length === 0 && (
+                      <p className="text-xs text-yellow-500 mt-1">⚠️ No agreement created</p>
+                    )}
+                    {agreement && (
+                      <p className="text-xs text-green-500 mt-1">✓ Signed agreement available</p>
+                    )}
                   </div>
                   <Button
                     size="sm"
@@ -330,7 +390,8 @@ export default function PCNTicketsPage() {
                       setSelectedBooking(booking)
                       setShowCreateDialog(true)
                     }}
-                    className="bg-red-500 hover:bg-red-600 text-white"
+                    disabled={!agreement}
+                    className="bg-red-500 hover:bg-red-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Plus className="h-4 w-4 mr-1" />
                     Add Ticket
@@ -396,7 +457,7 @@ export default function PCNTicketsPage() {
             <DialogTitle className="text-white">Add PCN Ticket</DialogTitle>
             {selectedBooking && (
               <p className="text-sm text-white/60">
-                {getCarName(selectedBooking.carId)} - {selectedBooking.customerName}
+                {getCarName(selectedBooking.car_id || selectedBooking.carId)} - {selectedBooking.customer_name || selectedBooking.customerName}
               </p>
             )}
           </DialogHeader>

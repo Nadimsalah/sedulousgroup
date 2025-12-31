@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   CreditCard,
   Search,
@@ -17,37 +18,15 @@ import {
   DollarSign,
   RefreshCw,
   AlertCircle,
+  Plus,
+  Car,
 } from "lucide-react"
-import { createClient } from "@supabase/supabase-js"
-
-interface Deposit {
-  id: string
-  booking_id: string
-  customer_name: string
-  customer_email: string
-  vehicle_name: string
-  amount: number
-  status: "pending" | "held" | "refunded" | "deducted"
-  payment_method: string
-  transaction_id: string
-  created_at: string
-  refunded_at: string | null
-  refund_amount: number | null
-  deduction_amount: number | null
-  deduction_reason: string | null
-  notes: string | null
-}
-
-function createAdminSupabase() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error("Missing Supabase credentials")
-  }
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  })
-}
+import { getDeposits, refundDeposit, deductFromDeposit, createDeposit } from "@/app/actions/admin-deposits"
+import { getAllBookingsAction } from "@/app/actions/bookings"
+import { getAgreementsByBookingAction } from "@/app/actions/agreements"
+import { toast } from "sonner"
+import type { Deposit } from "@/app/actions/admin-deposits"
+import type { BookingWithDetails } from "@/app/actions/bookings"
 
 export default function DepositsPage() {
   const [deposits, setDeposits] = useState<Deposit[]>([])
@@ -63,6 +42,16 @@ export default function DepositsPage() {
   const [deductionReason, setDeductionReason] = useState("")
   const [notes, setNotes] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [activeBookings, setActiveBookings] = useState<BookingWithDetails[]>([])
+  const [selectedBooking, setSelectedBooking] = useState<BookingWithDetails | null>(null)
+  const [newDeposit, setNewDeposit] = useState({
+    amount: "",
+    payment_method: "card",
+    transaction_id: "",
+    notes: "",
+  })
+  const [isCreating, setIsCreating] = useState(false)
   const [stats, setStats] = useState({
     total: 0,
     totalAmount: 0,
@@ -74,74 +63,45 @@ export default function DepositsPage() {
 
   useEffect(() => {
     loadDeposits()
+    loadActiveBookings()
   }, [])
+
+  const loadActiveBookings = async () => {
+    try {
+      const result = await getAllBookingsAction()
+      if (result?.success && result?.data) {
+        // Filter for active bookings that don't already have deposits
+        const active = result.data.filter((b) => {
+          const status = (b.status || "").toLowerCase()
+          return ["active", "approved", "confirmed"].includes(status)
+        })
+        setActiveBookings(active)
+      }
+    } catch (error) {
+      console.error("Error loading active bookings:", error)
+    }
+  }
 
   const loadDeposits = async () => {
     setIsLoading(true)
     setError(null)
     try {
-      const supabase = createAdminSupabase()
+      console.log("[Deposits Page] Loading deposits...")
+      const result = await getDeposits()
 
-      // Try to fetch from deposits table
-      const { data: depositsData, error: depositsError } = await supabase
-        .from("deposits")
-        .select("*")
-        .order("created_at", { ascending: false })
-
-      if (depositsError) {
-        if (depositsError.code === "42P01") {
-          // Table doesn't exist, try to get deposits from bookings
-          const { data: bookingsData, error: bookingsError } = await supabase
-            .from("bookings")
-            .select("id, customer_name, customer_email, deposit_amount, status, created_at, car_id")
-            .not("deposit_amount", "is", null)
-            .order("created_at", { ascending: false })
-
-          if (bookingsError) {
-            setError("Deposits table not found. Please create the table first.")
-            setDeposits([])
-          } else {
-            // Get car names
-            const carIds = [...new Set((bookingsData || []).map((b) => b.car_id).filter(Boolean))]
-            let carsMap: Record<string, string> = {}
-
-            if (carIds.length > 0) {
-              const { data: cars } = await supabase.from("cars").select("id, name").in("id", carIds)
-              if (cars) {
-                carsMap = Object.fromEntries(cars.map((c) => [c.id, c.name]))
-              }
-            }
-
-            const mappedDeposits: Deposit[] = (bookingsData || []).map((b) => ({
-              id: b.id,
-              booking_id: b.id,
-              customer_name: b.customer_name || "N/A",
-              customer_email: b.customer_email || "N/A",
-              vehicle_name: carsMap[b.car_id] || "Unknown Vehicle",
-              amount: b.deposit_amount || 0,
-              status: b.status?.toLowerCase().includes("completed") ? "refunded" : "held",
-              payment_method: "Card",
-              transaction_id: `TXN-${b.id.slice(0, 8)}`,
-              created_at: b.created_at,
-              refunded_at: null,
-              refund_amount: null,
-              deduction_amount: null,
-              deduction_reason: null,
-              notes: null,
-            }))
-
-            setDeposits(mappedDeposits)
-            calculateStats(mappedDeposits)
-          }
-        } else {
-          setError(depositsError.message)
-        }
+      if (result.success) {
+        console.log(`[Deposits Page] Loaded ${result.data.length} deposits`)
+        setDeposits(result.data || [])
+        calculateStats(result.data || [])
       } else {
-        setDeposits(depositsData || [])
-        calculateStats(depositsData || [])
+        console.error("[Deposits Page] Error loading deposits:", result.error)
+        setError(result.error || "Failed to load deposits")
+        setDeposits([])
       }
     } catch (err) {
+      console.error("[Deposits Page] Unexpected error:", err)
       setError("Failed to load deposits")
+      setDeposits([])
     } finally {
       setIsLoading(false)
     }
@@ -217,24 +177,32 @@ export default function DepositsPage() {
 
   const processRefund = async () => {
     if (!selectedDeposit) return
+
+    const refundAmt = Number.parseFloat(refundAmount)
+    if (isNaN(refundAmt) || refundAmt <= 0) {
+      toast.error("Please enter a valid refund amount")
+      return
+    }
+
     setIsProcessing(true)
     try {
-      const supabase = createAdminSupabase()
-      const { error: updateError } = await supabase
-        .from("deposits")
-        .update({
-          status: "refunded",
-          refund_amount: Number.parseFloat(refundAmount),
-          refunded_at: new Date().toISOString(),
-          notes: notes || null,
-        })
-        .eq("id", selectedDeposit.id)
+      console.log("[Deposits Page] Processing refund:", selectedDeposit.id, refundAmt)
+      const result = await refundDeposit(selectedDeposit.id, refundAmt, notes || undefined)
 
-      if (updateError) throw updateError
-      setShowRefundDialog(false)
-      loadDeposits()
+      if (result.success) {
+        toast.success("Refund processed successfully!")
+        setShowRefundDialog(false)
+        setRefundAmount("")
+        setNotes("")
+        await loadDeposits()
+      } else {
+        console.error("[Deposits Page] Failed to process refund:", result.error)
+        toast.error(`Failed to process refund: ${result.error}`)
+      }
     } catch (err) {
-      setError("Failed to process refund")
+      console.error("[Deposits Page] Error processing refund:", err)
+      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred"
+      toast.error(`Error: ${errorMessage}`)
     } finally {
       setIsProcessing(false)
     }
@@ -242,29 +210,129 @@ export default function DepositsPage() {
 
   const processDeduction = async () => {
     if (!selectedDeposit) return
+
+    if (!deductionReason || deductionReason.trim() === "") {
+      toast.error("Please enter a reason for the deduction")
+      return
+    }
+
+    const deductAmt = Number.parseFloat(deductionAmount)
+    if (isNaN(deductAmt) || deductAmt <= 0) {
+      toast.error("Please enter a valid deduction amount")
+      return
+    }
+
+    if (deductAmt > selectedDeposit.amount) {
+      toast.error("Deduction amount cannot exceed deposit amount")
+      return
+    }
+
     setIsProcessing(true)
     try {
-      const supabase = createAdminSupabase()
-      const refundAmt = selectedDeposit.amount - Number.parseFloat(deductionAmount)
-      const { error: updateError } = await supabase
-        .from("deposits")
-        .update({
-          status: "deducted",
-          deduction_amount: Number.parseFloat(deductionAmount),
-          deduction_reason: deductionReason,
-          refund_amount: refundAmt > 0 ? refundAmt : 0,
-          refunded_at: new Date().toISOString(),
-          notes: notes || null,
-        })
-        .eq("id", selectedDeposit.id)
+      console.log("[Deposits Page] Processing deduction:", selectedDeposit.id, deductAmt, deductionReason)
+      const result = await deductFromDeposit(selectedDeposit.id, deductAmt, deductionReason, notes || undefined)
 
-      if (updateError) throw updateError
-      setShowDeductDialog(false)
-      loadDeposits()
+      if (result.success) {
+        toast.success("Deduction processed successfully!")
+        setShowDeductDialog(false)
+        setDeductionAmount("")
+        setDeductionReason("")
+        setNotes("")
+        await loadDeposits()
+      } else {
+        console.error("[Deposits Page] Failed to process deduction:", result.error)
+        toast.error(`Failed to process deduction: ${result.error}`)
+      }
     } catch (err) {
-      setError("Failed to process deduction")
+      console.error("[Deposits Page] Error processing deduction:", err)
+      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred"
+      toast.error(`Error: ${errorMessage}`)
     } finally {
       setIsProcessing(false)
+    }
+  }
+
+  const handleCreateDeposit = async () => {
+    if (!selectedBooking || !newDeposit.amount) return
+
+    const amount = Number.parseFloat(newDeposit.amount)
+    if (isNaN(amount) || amount <= 0) {
+      toast.error("Please enter a valid deposit amount")
+      return
+    }
+
+    setIsCreating(true)
+    try {
+      console.log("[Deposits Page] Creating deposit:", selectedBooking.id, amount)
+      
+      // Get agreement for this booking - it's required for deposits
+      let agreementId: string | null = null
+      try {
+        const agreements = await getAgreementsByBookingAction(selectedBooking.id)
+        if (agreements && agreements.length > 0) {
+          agreementId = agreements[0].id
+          console.log("[Deposits Page] Found agreement:", agreementId)
+        } else {
+          console.log("[Deposits Page] No agreement found for booking")
+          toast.error("This booking does not have an agreement. Please create an agreement first.")
+          setIsCreating(false)
+          return
+        }
+      } catch (err) {
+        console.error("[Deposits Page] Error fetching agreement:", err)
+        toast.error("Failed to fetch agreement for this booking")
+        setIsCreating(false)
+        return
+      }
+
+      // Get customer_id from booking - it's required
+      const customerId = selectedBooking.user_id
+      if (!customerId) {
+        toast.error("This booking does not have a customer ID. Cannot create deposit.")
+        setIsCreating(false)
+        return
+      }
+
+      console.log("[Deposits Page] Creating deposit with:", {
+        booking_id: selectedBooking.id,
+        agreement_id: agreementId,
+        customer_id: customerId,
+        amount: amount,
+      })
+
+      const result = await createDeposit({
+        booking_id: selectedBooking.id,
+        agreement_id: agreementId!,
+        customer_id: customerId,
+        amount: amount,
+        status: "held",
+        payment_method: newDeposit.payment_method,
+        transaction_id: newDeposit.transaction_id || null,
+        notes: newDeposit.notes || null,
+      })
+
+      if (result.success) {
+        toast.success("Deposit created successfully!")
+        setShowCreateDialog(false)
+        setSelectedBooking(null)
+        setNewDeposit({
+          amount: "",
+          payment_method: "card",
+          transaction_id: "",
+          notes: "",
+        })
+        await loadDeposits()
+        await loadActiveBookings()
+      } else {
+        console.error("[Deposits Page] Failed to create deposit:", result.error)
+        toast.error(`Failed to create deposit: ${result.error}`)
+      }
+    } catch (err) {
+      console.error("[Deposits Page] Error creating deposit:", err)
+      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred"
+      toast.error(`Error: ${errorMessage}`)
+    } finally {
+      setIsCreating(false)
     }
   }
 
@@ -277,10 +345,22 @@ export default function DepositsPage() {
             <h1 className="text-2xl md:text-3xl font-bold text-white">Deposits Management</h1>
             <p className="text-gray-400 mt-1">Track and manage customer deposits and refunds</p>
           </div>
-          <Button className="bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white">
-            <Download className="h-4 w-4 mr-2" />
-            Export Report
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => {
+                setShowCreateDialog(true)
+                loadActiveBookings()
+              }}
+              className="bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Deposit
+            </Button>
+            <Button className="bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white">
+              <Download className="h-4 w-4 mr-2" />
+              Export Report
+            </Button>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -558,6 +638,160 @@ export default function DepositsPage() {
                 Cancel
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Deposit Dialog */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-white max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add Deposit for Active Booking</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Select an active booking and enter deposit details
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            {/* Select Booking */}
+            <div>
+              <Label className="text-gray-400 mb-2 block">Select Active Booking</Label>
+              <div className="max-h-60 overflow-y-auto space-y-2 border border-zinc-700 rounded-lg p-2">
+                {activeBookings.length === 0 ? (
+                  <p className="text-gray-500 text-center py-4">No active bookings found</p>
+                ) : (
+                  activeBookings.map((booking) => {
+                    const hasDeposit = deposits.some((d) => d.booking_id === booking.id)
+                    return (
+                      <div
+                        key={booking.id}
+                        onClick={() => {
+                          if (!hasDeposit) {
+                            setSelectedBooking(booking)
+                            setNewDeposit({
+                              amount: "",
+                              payment_method: "card",
+                              transaction_id: "",
+                              notes: "",
+                            })
+                          }
+                        }}
+                        className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                          selectedBooking?.id === booking.id
+                            ? "border-red-500 bg-red-500/10"
+                            : hasDeposit
+                              ? "border-zinc-700 bg-zinc-800/50 opacity-50 cursor-not-allowed"
+                              : "border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800/50"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Car className="h-4 w-4 text-gray-400" />
+                              <h4 className="font-semibold text-white">{booking.car_name || "Unknown Vehicle"}</h4>
+                              {hasDeposit && (
+                                <span className="text-xs bg-green-500/10 text-green-400 px-2 py-0.5 rounded">
+                                  Has Deposit
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-400">Customer: {booking.customer_name}</p>
+                            <p className="text-sm text-gray-400">Email: {booking.customer_email}</p>
+                            <p className="text-sm text-gray-400">
+                              Booking ID: {booking.id.slice(0, 8)}...
+                            </p>
+                          </div>
+                          {selectedBooking?.id === booking.id && (
+                            <CheckCircle className="h-5 w-5 text-red-500" />
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+
+            {selectedBooking && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-gray-400">Deposit Amount (£)</Label>
+                    <Input
+                      type="number"
+                      value={newDeposit.amount}
+                      onChange={(e) => setNewDeposit({ ...newDeposit, amount: e.target.value })}
+                      className="bg-black border-zinc-700 text-white mt-1"
+                      placeholder="Enter amount"
+                      step="0.01"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-gray-400">Payment Method</Label>
+                    <Select
+                      value={newDeposit.payment_method}
+                      onValueChange={(value) => setNewDeposit({ ...newDeposit, payment_method: value })}
+                    >
+                      <SelectTrigger className="bg-black border-zinc-700 text-white mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-zinc-900 border-zinc-700">
+                        <SelectItem value="card">Card</SelectItem>
+                        <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                        <SelectItem value="cash">Cash</SelectItem>
+                        <SelectItem value="other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-gray-400">Transaction ID</Label>
+                  <Input
+                    value={newDeposit.transaction_id}
+                    onChange={(e) => setNewDeposit({ ...newDeposit, transaction_id: e.target.value })}
+                    className="bg-black border-zinc-700 text-white mt-1"
+                    placeholder="Enter transaction ID (optional)"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-gray-400">Notes</Label>
+                  <Textarea
+                    value={newDeposit.notes}
+                    onChange={(e) => setNewDeposit({ ...newDeposit, notes: e.target.value })}
+                    className="bg-black border-zinc-700 text-white mt-1"
+                    placeholder="Additional notes (optional)"
+                    rows={3}
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleCreateDeposit}
+                    disabled={isCreating || !newDeposit.amount || Number.parseFloat(newDeposit.amount) <= 0}
+                    className="flex-1 bg-green-500 hover:bg-green-600"
+                  >
+                    {isCreating ? "Creating..." : "Create Deposit"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowCreateDialog(false)
+                      setSelectedBooking(null)
+                      setNewDeposit({
+                        amount: "",
+                        payment_method: "card",
+                        transaction_id: "",
+                        notes: "",
+                      })
+                    }}
+                    className="border-zinc-700"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>

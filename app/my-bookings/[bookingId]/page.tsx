@@ -171,8 +171,27 @@ export default function BookingDetailsPage() {
         throw new Error(result.error)
       }
 
-      setCurrentStep(2)
-      await loadBookingDetails()
+      // Generate signed PDF after signing
+      try {
+        console.log("[v0] Starting PDF generation for agreement:", data.agreement.id)
+        const { generateSignedPdfAction } = await import("@/app/actions/generate-signed-pdf")
+        const pdfResult = await generateSignedPdfAction(data.agreement.id)
+        
+        if (!pdfResult.success) {
+          console.error("[v0] PDF generation failed:", pdfResult.error)
+          // Show error but continue - signature was saved, PDF can be generated later
+          alert(`Agreement signed successfully, but PDF generation failed: ${pdfResult.error}. You can generate it from the success page.`)
+        } else {
+          console.log("[v0] PDF generated successfully:", pdfResult.signedPdfUrl?.substring(0, 100))
+        }
+      } catch (pdfError: any) {
+        console.error("[v0] Error generating signed PDF:", pdfError)
+        // Show error but continue - signature was saved
+        alert(`Agreement signed successfully, but PDF generation had an error: ${pdfError.message || "Unknown error"}. You can generate it from the success page.`)
+      }
+
+      // Redirect to success page (PDF generation will continue there if needed)
+      router.push(`/agreement/success/${data.agreement.id}`)
     } catch (err: any) {
       console.error("[v0] Error signing agreement:", err)
       alert("Failed to sign: " + err.message)
@@ -442,7 +461,7 @@ export default function BookingDetailsPage() {
                           </p>
                         )}
                       </div>
-                      {(agreement.signed_agreement_url || (agreement as any).signedAgreementUrl) && (
+                      {(agreement.signed_agreement_url || (agreement as any).signedAgreementUrl) ? (
                         <a
                           href={agreement.signed_agreement_url || (agreement as any).signedAgreementUrl}
                           target="_blank"
@@ -452,6 +471,18 @@ export default function BookingDetailsPage() {
                           <Download className="h-4 w-4" />
                           Download Signed Agreement PDF
                         </a>
+                      ) : (
+                        <div className="flex items-center gap-2 text-yellow-400 text-sm">
+                          <span>PDF is being generated...</span>
+                          <Button
+                            onClick={loadBookingDetails}
+                            variant="outline"
+                            size="sm"
+                            className="border-yellow-400/20 text-yellow-400 hover:bg-yellow-400/10"
+                          >
+                            Refresh
+                          </Button>
+                        </div>
                       )}
                     </div>
                   )}

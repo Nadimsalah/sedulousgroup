@@ -2,23 +2,43 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card } from "@/components/ui/card"
+import { Loader2 } from "lucide-react"
 import {
-  CalendarIcon,
+  Home,
+  Calendar,
+  CheckCircle,
   Car,
   Users,
   FileText,
+  Camera,
+  AlertTriangle,
+  Wrench,
+  CreditCard,
+  Ticket,
+  ImageIcon,
+  Settings,
   TrendingUp,
   Clock,
-  CheckCircle2,
-  AlertCircle,
-  XCircle,
   DollarSign,
   Activity,
+  ArrowRight,
 } from "lucide-react"
 import { getAdminStats } from "@/app/actions/admin"
-import { Bar, BarChart, Line, LineChart, Pie, PieChart, ResponsiveContainer, XAxis, YAxis, Cell } from "recharts"
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
+
+interface DashboardPage {
+  name: string
+  href: string
+  icon: React.ComponentType<{ className?: string }>
+  description: string
+  color: string
+  gradient: string
+  stats?: {
+    label: string
+    value: number | string
+    isLoading?: boolean
+  }
+}
 
 export default function AdminDashboard() {
   const [isLoading, setIsLoading] = useState(true)
@@ -33,6 +53,13 @@ export default function AdminDashboard() {
     totalCars: 0,
     availableCars: 0,
     totalCustomers: 0,
+    profit: {
+      all: 0,
+      today: 0,
+      yesterday: 0,
+      week: 0,
+      month: 0,
+    },
   })
 
   useEffect(() => {
@@ -64,6 +91,13 @@ export default function AdminDashboard() {
         totalCars: data.cars?.length || 0,
         availableCars: data.cars?.filter((c: any) => (c.status || "").toLowerCase() === "available").length || 0,
         totalCustomers: data.stats.totalCustomers,
+        profit: data.stats.profit || {
+          all: 0,
+          today: 0,
+          yesterday: 0,
+          week: 0,
+          month: 0,
+        },
       })
     } catch (error) {
       console.error("Error loading stats:", error)
@@ -72,338 +106,407 @@ export default function AdminDashboard() {
     }
   }
 
-  const bookingStatusData = [
-    { name: "Pending", value: stats.pending, color: "#facc15" },
-    { name: "Approved", value: stats.approved, color: "#60a5fa" },
-    { name: "Active", value: stats.onRent, color: "#34d399" },
-    { name: "Completed", value: stats.completed, color: "#9ca3af" },
-    { name: "Rejected", value: stats.rejected, color: "#ef4444" },
-  ]
-
-  const monthlyBookingsData = [
-    { month: "Jan", bookings: 12 },
-    { month: "Feb", bookings: 19 },
-    { month: "Mar", bookings: 15 },
-    { month: "Apr", bookings: 25 },
-    { month: "May", bookings: 22 },
-    { month: "Jun", bookings: 30 },
-  ]
-
-  const revenueData = [
-    { month: "Jan", revenue: 24000 },
-    { month: "Feb", revenue: 38000 },
-    { month: "Mar", revenue: 30000 },
-    { month: "Apr", revenue: 50000 },
-    { month: "May", revenue: 44000 },
-    { month: "Jun", revenue: 60000 },
+  const dashboardPages: DashboardPage[] = [
+    {
+      name: "Bookings Schedule",
+      href: "/admin/requests",
+      icon: Calendar,
+      description: "View and manage all booking requests",
+      color: "from-blue-500/20 to-blue-600/20",
+      gradient: "bg-gradient-to-br",
+      stats: {
+        label: "Pending Requests",
+        value: stats.pending,
+        isLoading,
+      },
+    },
+    {
+      name: "Active Bookings",
+      href: "/admin/active-bookings",
+      icon: CheckCircle,
+      description: "Monitor currently active rentals",
+      color: "from-green-500/20 to-green-600/20",
+      gradient: "bg-gradient-to-br",
+      stats: {
+        label: "On Rent",
+        value: stats.onRent,
+        isLoading,
+      },
+    },
+    {
+      name: "Vehicles",
+      href: "/admin/cars",
+      icon: Car,
+      description: "Manage your entire vehicle fleet",
+      color: "from-purple-500/20 to-purple-600/20",
+      gradient: "bg-gradient-to-br",
+      stats: {
+        label: "Total Vehicles",
+        value: stats.totalCars,
+        isLoading,
+      },
+    },
+    {
+      name: "Customers",
+      href: "/admin/customers",
+      icon: Users,
+      description: "View customer profiles and history",
+      color: "from-cyan-500/20 to-cyan-600/20",
+      gradient: "bg-gradient-to-br",
+      stats: {
+        label: "Total Customers",
+        value: stats.totalCustomers,
+        isLoading,
+      },
+    },
+    {
+      name: "Agreements",
+      href: "/admin/agreements",
+      icon: FileText,
+      description: "Generate and manage rental contracts",
+      color: "from-orange-500/20 to-orange-600/20",
+      gradient: "bg-gradient-to-br",
+    },
+    {
+      name: "Inspections",
+      href: "/admin/inspections",
+      icon: Camera,
+      description: "Vehicle handover and return inspections",
+      color: "from-pink-500/20 to-pink-600/20",
+      gradient: "bg-gradient-to-br",
+    },
+    {
+      name: "Damage Reports",
+      href: "/admin/damage-reports",
+      icon: AlertTriangle,
+      description: "Track and manage vehicle damage",
+      color: "from-red-500/20 to-red-600/20",
+      gradient: "bg-gradient-to-br",
+    },
+    {
+      name: "Vendors",
+      href: "/admin/vendors",
+      icon: Wrench,
+      description: "Manage service providers and vendors",
+      color: "from-yellow-500/20 to-yellow-600/20",
+      gradient: "bg-gradient-to-br",
+    },
+    {
+      name: "Deposits",
+      href: "/admin/deposits",
+      icon: CreditCard,
+      description: "Manage customer deposits and refunds",
+      color: "from-indigo-500/20 to-indigo-600/20",
+      gradient: "bg-gradient-to-br",
+    },
+    {
+      name: "PCNs / Tickets",
+      href: "/admin/pcn-tickets",
+      icon: Ticket,
+      description: "Handle parking and traffic tickets",
+      color: "from-rose-500/20 to-rose-600/20",
+      gradient: "bg-gradient-to-br",
+    },
+    {
+      name: "Stories",
+      href: "/admin/stories",
+      icon: ImageIcon,
+      description: "Manage Instagram-style car stories",
+      color: "from-violet-500/20 to-violet-600/20",
+      gradient: "bg-gradient-to-br",
+    },
+    {
+      name: "Settings",
+      href: "/admin/settings",
+      icon: Settings,
+      description: "Configure system settings and preferences",
+      color: "from-gray-500/20 to-gray-600/20",
+      gradient: "bg-gradient-to-br",
+    },
   ]
 
   return (
-    <div className="min-h-screen bg-black p-4 md:p-6 space-y-4 md:space-y-6">
-      {/* Hero Header */}
-      <div className="liquid-glass border border-white/10 rounded-2xl p-6 md:p-8 bg-gradient-to-br from-red-950/20 to-black">
-        <h1 className="text-2xl md:text-4xl font-bold text-white mb-2">Dashboard Overview</h1>
-        <p className="text-white/60 text-sm md:text-lg">
-          Welcome back! Here's what's happening with your business today.
+    <div className="min-h-screen bg-black p-3 md:p-6 space-y-6">
+      {/* Header */}
+      <div className="liquid-glass border-white/10 rounded-2xl p-6 md:p-8 bg-gradient-to-br from-red-950/20 to-black">
+        <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">Dashboard Overview</h1>
+        <p className="text-white/60 text-sm md:text-base">
+          Welcome back! Manage your rental business from one central location.
         </p>
       </div>
 
-      {/* Main Stats Grid */}
-      <div className="grid gap-4 md:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="liquid-glass border-white/10 hover:border-red-500/30 transition-all hover:scale-105">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-white/80">Total Bookings</CardTitle>
-            <div className="h-10 w-10 rounded-full bg-red-500/10 flex items-center justify-center">
-              <CalendarIcon className="h-5 w-5 text-red-500" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-white">{isLoading ? "..." : stats.totalBookings}</div>
-            <p className="text-xs text-white/60 mt-2 flex items-center gap-1">
-              <TrendingUp className="h-3 w-3 text-green-500" />
-              <span className="text-green-500">+12%</span> from last month
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="liquid-glass border-white/10 hover:border-green-500/30 transition-all hover:scale-105">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-white/80">Active Rentals</CardTitle>
-            <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center">
-              <Car className="h-5 w-5 text-green-500" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-white">{isLoading ? "..." : stats.onRent}</div>
-            <p className="text-xs text-white/60 mt-2">Currently on road</p>
-          </CardContent>
-        </Card>
-
-        <Card className="liquid-glass border-white/10 hover:border-yellow-500/30 transition-all hover:scale-105">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-white/80">Pending Requests</CardTitle>
-            <div className="h-10 w-10 rounded-full bg-yellow-500/10 flex items-center justify-center">
-              <Clock className="h-5 w-5 text-yellow-500" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-white">{isLoading ? "..." : stats.pending}</div>
-            <p className="text-xs text-white/60 mt-2">Awaiting approval</p>
-          </CardContent>
-        </Card>
-
-        <Card className="liquid-glass border-white/10 hover:border-blue-500/30 transition-all hover:scale-105">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-white/80">Total Customers</CardTitle>
-            <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
-              <Users className="h-5 w-5 text-blue-500" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-white">{isLoading ? "..." : stats.totalCustomers}</div>
-            <p className="text-xs text-white/60 mt-2 flex items-center gap-1">
-              <TrendingUp className="h-3 w-3 text-green-500" />
-              <span className="text-green-500">+8%</span> from last month
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Booking Status Pie Chart */}
-      <div className="grid gap-4 md:gap-6 grid-cols-1 lg:grid-cols-2">
-        <Card className="liquid-glass border-white/10">
-          <CardHeader className="p-4 md:p-6">
-            <CardTitle className="text-white flex items-center gap-2 text-lg md:text-xl">
-              <Activity className="h-4 w-4 md:h-5 md:w-5 text-red-500" />
-              Booking Status Distribution
-            </CardTitle>
-            <CardDescription className="text-white/60 text-sm">Current breakdown of all bookings</CardDescription>
-          </CardHeader>
-          <CardContent className="p-4 md:p-6 pt-0">
-            <div className="w-full aspect-square max-h-[350px]">
-              <ChartContainer
-                config={{
-                  pending: { label: "Pending", color: "#facc15" },
-                  approved: { label: "Approved", color: "#60a5fa" },
-                  active: { label: "Active", color: "#34d399" },
-                  completed: { label: "Completed", color: "#9ca3af" },
-                  rejected: { label: "Rejected", color: "#ef4444" },
-                }}
-                className="h-full w-full"
-              >
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={bookingStatusData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius="40%"
-                      outerRadius="70%"
-                      paddingAngle={5}
-                      dataKey="value"
-                      label={(entry) => (entry.value > 0 ? `${entry.name}: ${entry.value}` : "")}
-                    >
-                      {bookingStatusData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </ChartContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Monthly Bookings Bar Chart */}
-        <Card className="liquid-glass border-white/10">
-          <CardHeader className="p-4 md:p-6">
-            <CardTitle className="text-white flex items-center gap-2 text-lg md:text-xl">
-              <TrendingUp className="h-4 w-4 md:h-5 md:w-5 text-red-500" />
-              Monthly Bookings Trend
-            </CardTitle>
-            <CardDescription className="text-white/60 text-sm">Bookings over the last 6 months</CardDescription>
-          </CardHeader>
-          <CardContent className="p-4 md:p-6 pt-0">
-            <div className="w-full aspect-square max-h-[350px]">
-              <ChartContainer
-                config={{
-                  bookings: { label: "Bookings", color: "#ef4444" },
-                }}
-                className="h-full w-full"
-              >
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlyBookingsData}>
-                    <XAxis dataKey="month" stroke="#ffffff40" tick={{ fill: "#ffffff80", fontSize: 12 }} />
-                    <YAxis stroke="#ffffff40" tick={{ fill: "#ffffff80", fontSize: 12 }} />
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <Bar dataKey="bookings" fill="#ef4444" radius={[8, 8, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </ChartContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Revenue Line Chart */}
-        <Card className="liquid-glass border-white/10 lg:col-span-2">
-          <CardHeader className="p-4 md:p-6">
-            <CardTitle className="text-white flex items-center gap-2 text-lg md:text-xl">
-              <DollarSign className="h-4 w-4 md:h-5 md:w-5 text-green-500" />
-              Revenue Overview
-            </CardTitle>
-            <CardDescription className="text-white/60 text-sm">Monthly revenue performance</CardDescription>
-          </CardHeader>
-          <CardContent className="p-4 md:p-6 pt-0">
-            <div className="w-full h-[250px] md:h-[350px]">
-              <ChartContainer
-                config={{
-                  revenue: { label: "Revenue", color: "#34d399" },
-                }}
-                className="h-full w-full"
-              >
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={revenueData}>
-                    <XAxis dataKey="month" stroke="#ffffff40" tick={{ fill: "#ffffff80", fontSize: 12 }} />
-                    <YAxis stroke="#ffffff40" tick={{ fill: "#ffffff80", fontSize: 12 }} />
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <Line
-                      type="monotone"
-                      dataKey="revenue"
-                      stroke="#34d399"
-                      strokeWidth={3}
-                      dot={{ fill: "#34d399", r: 4 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </ChartContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Booking Status Overview Grid */}
-      <Card className="liquid-glass border-white/10">
-        <CardHeader className="p-4 md:p-6">
-          <CardTitle className="text-white text-xl md:text-2xl">Booking Status Overview</CardTitle>
-          <CardDescription className="text-white/60 text-sm">
-            Detailed breakdown of all booking statuses
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-4 md:p-6">
-          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="liquid-glass border border-yellow-500/20 rounded-xl p-6 hover:border-yellow-500/50 transition-all hover:scale-105">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-white/60 mb-1">Pending</p>
-                  <p className="text-4xl font-bold text-yellow-400">{isLoading ? "..." : stats.pending}</p>
-                </div>
-                <div className="h-14 w-14 rounded-full bg-yellow-500/10 flex items-center justify-center">
-                  <Clock className="h-8 w-8 text-yellow-400" />
-                </div>
+      {/* Key Statistics */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="liquid-glass border-white/10 hover:border-red-500/30 transition-all">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="h-12 w-12 rounded-xl bg-red-500/10 flex items-center justify-center">
+                <Calendar className="h-6 w-6 text-red-500" />
               </div>
+              <TrendingUp className="h-5 w-5 text-green-400" />
             </div>
-
-            <div className="liquid-glass border border-blue-500/20 rounded-xl p-6 hover:border-blue-500/50 transition-all hover:scale-105">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-white/60 mb-1">Approved</p>
-                  <p className="text-4xl font-bold text-blue-400">{isLoading ? "..." : stats.approved}</p>
-                </div>
-                <div className="h-14 w-14 rounded-full bg-blue-500/10 flex items-center justify-center">
-                  <CheckCircle2 className="h-8 w-8 text-blue-400" />
-                </div>
-              </div>
+            <div className="text-3xl font-bold text-white mb-1">
+              {isLoading ? <Loader2 className="h-8 w-8 animate-spin" /> : stats.totalBookings}
             </div>
-
-            <div className="liquid-glass border border-green-500/20 rounded-xl p-6 hover:border-green-500/50 transition-all hover:scale-105">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-white/60 mb-1">On Rent</p>
-                  <p className="text-4xl font-bold text-green-400">{isLoading ? "..." : stats.onRent}</p>
-                </div>
-                <div className="h-14 w-14 rounded-full bg-green-500/10 flex items-center justify-center">
-                  <Car className="h-8 w-8 text-green-400" />
-                </div>
-              </div>
-            </div>
-
-            <div className="liquid-glass border border-red-500/20 rounded-xl p-6 hover:border-red-500/50 transition-all hover:scale-105">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-white/60 mb-1">Overdue</p>
-                  <p className="text-4xl font-bold text-red-400">{isLoading ? "..." : stats.overdue}</p>
-                </div>
-                <div className="h-14 w-14 rounded-full bg-red-500/10 flex items-center justify-center">
-                  <AlertCircle className="h-8 w-8 text-red-400" />
-                </div>
-              </div>
-            </div>
-
-            <div className="liquid-glass border border-gray-500/20 rounded-xl p-6 hover:border-gray-500/50 transition-all hover:scale-105">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-white/60 mb-1">Completed</p>
-                  <p className="text-4xl font-bold text-gray-400">{isLoading ? "..." : stats.completed}</p>
-                </div>
-                <div className="h-14 w-14 rounded-full bg-gray-500/10 flex items-center justify-center">
-                  <CheckCircle2 className="h-8 w-8 text-gray-400" />
-                </div>
-              </div>
-            </div>
-
-            <div className="liquid-glass border border-red-500/20 rounded-xl p-6 hover:border-red-500/50 transition-all hover:scale-105">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-white/60 mb-1">Rejected</p>
-                  <p className="text-4xl font-bold text-red-400">{isLoading ? "..." : stats.rejected}</p>
-                </div>
-                <div className="h-14 w-14 rounded-full bg-red-500/10 flex items-center justify-center">
-                  <XCircle className="h-8 w-8 text-red-400" />
-                </div>
-              </div>
-            </div>
+            <p className="text-sm text-white/60">Total Bookings</p>
           </div>
-        </CardContent>
-      </Card>
+        </Card>
 
-      {/* Quick Actions */}
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
-        <Link href="/admin/requests">
-          <Card className="liquid-glass border-white/10 hover:border-red-500/50 transition-all hover:scale-105 cursor-pointer h-full">
-            <CardHeader>
-              <div className="h-12 w-12 rounded-full bg-red-500/10 flex items-center justify-center mb-4">
-                <CalendarIcon className="h-6 w-6 text-red-500" />
+        <Card className="liquid-glass border-white/10 hover:border-green-500/30 transition-all">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="h-12 w-12 rounded-xl bg-green-500/10 flex items-center justify-center">
+                <Car className="h-6 w-6 text-green-500" />
               </div>
-              <CardTitle className="text-white text-xl">View All Requests</CardTitle>
-              <CardDescription className="text-white/60">Manage pending and active booking requests</CardDescription>
-            </CardHeader>
-          </Card>
-        </Link>
+              <Activity className="h-5 w-5 text-green-400" />
+            </div>
+            <div className="text-3xl font-bold text-white mb-1">
+              {isLoading ? <Loader2 className="h-8 w-8 animate-spin" /> : stats.onRent}
+            </div>
+            <p className="text-sm text-white/60">Active Rentals</p>
+          </div>
+        </Card>
 
-        <Link href="/admin/cars">
-          <Card className="liquid-glass border-white/10 hover:border-red-500/50 transition-all hover:scale-105 cursor-pointer h-full">
-            <CardHeader>
-              <div className="h-12 w-12 rounded-full bg-red-500/10 flex items-center justify-center mb-4">
-                <Car className="h-6 w-6 text-red-500" />
+        <Card className="liquid-glass border-white/10 hover:border-yellow-500/30 transition-all">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="h-12 w-12 rounded-xl bg-yellow-500/10 flex items-center justify-center">
+                <Clock className="h-6 w-6 text-yellow-500" />
               </div>
-              <CardTitle className="text-white text-xl">Manage Cars</CardTitle>
-              <CardDescription className="text-white/60">View and manage your entire fleet</CardDescription>
-            </CardHeader>
-          </Card>
-        </Link>
+              <AlertTriangle className="h-5 w-5 text-yellow-400" />
+            </div>
+            <div className="text-3xl font-bold text-white mb-1">
+              {isLoading ? <Loader2 className="h-8 w-8 animate-spin" /> : stats.pending}
+            </div>
+            <p className="text-sm text-white/60">Pending Requests</p>
+          </div>
+        </Card>
 
-        <Link href="/admin/agreements">
-          <Card className="liquid-glass border-white/10 hover:border-red-500/50 transition-all hover:scale-105 cursor-pointer h-full">
-            <CardHeader>
-              <div className="h-12 w-12 rounded-full bg-red-500/10 flex items-center justify-center mb-4">
-                <FileText className="h-6 w-6 text-red-500" />
+        <Card className="liquid-glass border-white/10 hover:border-blue-500/30 transition-all">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="h-12 w-12 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                <Users className="h-6 w-6 text-blue-500" />
               </div>
-              <CardTitle className="text-white text-xl">Rental Agreements</CardTitle>
-              <CardDescription className="text-white/60">Generate and manage rental contracts</CardDescription>
-            </CardHeader>
+              <TrendingUp className="h-5 w-5 text-blue-400" />
+            </div>
+            <div className="text-3xl font-bold text-white mb-1">
+              {isLoading ? <Loader2 className="h-8 w-8 animate-spin" /> : stats.totalCustomers}
+            </div>
+            <p className="text-sm text-white/60">Total Customers</p>
+          </div>
+        </Card>
+      </div>
+
+      {/* Profit Statistics */}
+      <div>
+        <h2 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
+          <DollarSign className="h-6 w-6 text-green-400" />
+          Profit Overview
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <Card className="liquid-glass border-white/10 hover:border-green-500/30 transition-all">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="h-12 w-12 rounded-xl bg-green-500/10 flex items-center justify-center">
+                  <DollarSign className="h-6 w-6 text-green-500" />
+                </div>
+                <TrendingUp className="h-5 w-5 text-green-400" />
+              </div>
+              <div className="text-3xl font-bold text-white mb-1">
+                {isLoading ? (
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                ) : (
+                  `£${stats.profit.all.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                )}
+              </div>
+              <p className="text-sm text-white/60">All Time Profit</p>
+            </div>
           </Card>
-        </Link>
+
+          <Card className="liquid-glass border-white/10 hover:border-blue-500/30 transition-all">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="h-12 w-12 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                  <Activity className="h-6 w-6 text-blue-500" />
+                </div>
+                <Clock className="h-5 w-5 text-blue-400" />
+              </div>
+              <div className="text-3xl font-bold text-white mb-1">
+                {isLoading ? (
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                ) : (
+                  `£${stats.profit.today.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                )}
+              </div>
+              <p className="text-sm text-white/60">Today</p>
+            </div>
+          </Card>
+
+          <Card className="liquid-glass border-white/10 hover:border-purple-500/30 transition-all">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="h-12 w-12 rounded-xl bg-purple-500/10 flex items-center justify-center">
+                  <Calendar className="h-6 w-6 text-purple-500" />
+                </div>
+                <Clock className="h-5 w-5 text-purple-400" />
+              </div>
+              <div className="text-3xl font-bold text-white mb-1">
+                {isLoading ? (
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                ) : (
+                  `£${stats.profit.yesterday.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                )}
+              </div>
+              <p className="text-sm text-white/60">Yesterday</p>
+            </div>
+          </Card>
+
+          <Card className="liquid-glass border-white/10 hover:border-cyan-500/30 transition-all">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="h-12 w-12 rounded-xl bg-cyan-500/10 flex items-center justify-center">
+                  <TrendingUp className="h-6 w-6 text-cyan-500" />
+                </div>
+                <Activity className="h-5 w-5 text-cyan-400" />
+              </div>
+              <div className="text-3xl font-bold text-white mb-1">
+                {isLoading ? (
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                ) : (
+                  `£${stats.profit.week.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                )}
+              </div>
+              <p className="text-sm text-white/60">This Week</p>
+            </div>
+          </Card>
+
+          <Card className="liquid-glass border-white/10 hover:border-orange-500/30 transition-all">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="h-12 w-12 rounded-xl bg-orange-500/10 flex items-center justify-center">
+                  <DollarSign className="h-6 w-6 text-orange-500" />
+                </div>
+                <TrendingUp className="h-5 w-5 text-orange-400" />
+              </div>
+              <div className="text-3xl font-bold text-white mb-1">
+                {isLoading ? (
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                ) : (
+                  `£${stats.profit.month.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                )}
+              </div>
+              <p className="text-sm text-white/60">This Month</p>
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      {/* Additional Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        <Card className="liquid-glass border-white/10 p-4 text-center">
+          <div className="text-2xl font-bold text-green-400 mb-1">
+            {isLoading ? "..." : stats.approved}
+          </div>
+          <p className="text-xs text-white/60">Approved</p>
+        </Card>
+        <Card className="liquid-glass border-white/10 p-4 text-center">
+          <div className="text-2xl font-bold text-gray-400 mb-1">
+            {isLoading ? "..." : stats.completed}
+          </div>
+          <p className="text-xs text-white/60">Completed</p>
+        </Card>
+        <Card className="liquid-glass border-white/10 p-4 text-center">
+          <div className="text-2xl font-bold text-red-400 mb-1">
+            {isLoading ? "..." : stats.overdue}
+          </div>
+          <p className="text-xs text-white/60">Overdue</p>
+        </Card>
+        <Card className="liquid-glass border-white/10 p-4 text-center">
+          <div className="text-2xl font-bold text-red-400 mb-1">
+            {isLoading ? "..." : stats.rejected}
+          </div>
+          <p className="text-xs text-white/60">Rejected</p>
+        </Card>
+        <Card className="liquid-glass border-white/10 p-4 text-center">
+          <div className="text-2xl font-bold text-purple-400 mb-1">
+            {isLoading ? "..." : stats.totalCars}
+          </div>
+          <p className="text-xs text-white/60">Total Cars</p>
+        </Card>
+        <Card className="liquid-glass border-white/10 p-4 text-center">
+          <div className="text-2xl font-bold text-cyan-400 mb-1">
+            {isLoading ? "..." : stats.availableCars}
+          </div>
+          <p className="text-xs text-white/60">Available</p>
+        </Card>
+      </div>
+
+      {/* All Pages Overview */}
+      <div>
+        <h2 className="text-2xl font-bold text-white mb-4">Quick Access</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {dashboardPages.map((page) => {
+            const Icon = page.icon
+            return (
+              <Link key={page.href} href={page.href}>
+                <Card className="liquid-glass border-0 hover:shadow-lg hover:shadow-red-500/10 transition-all duration-300 cursor-pointer group h-full">
+                  <div className={`p-6 ${page.gradient} ${page.color} rounded-xl`}>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="h-12 w-12 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <Icon className="h-6 w-6 text-white" />
+                      </div>
+                      <ArrowRight className="h-5 w-5 text-white/40 group-hover:text-white group-hover:translate-x-1 transition-all" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-red-400 transition-colors">
+                      {page.name}
+                    </h3>
+                    <p className="text-sm text-white/70 mb-4">{page.description}</p>
+                    {page.stats && (
+                      <div className="mt-4 pt-4 border-t border-white/10">
+                        <div className="text-2xl font-bold text-white">
+                          {page.stats.isLoading ? (
+                            <Loader2 className="h-6 w-6 animate-spin inline-block" />
+                          ) : (
+                            page.stats.value
+                          )}
+                        </div>
+                        <p className="text-xs text-white/60 mt-1">{page.stats.label}</p>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              </Link>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Vehicle Categories Quick Links */}
+      <div>
+        <h2 className="text-2xl font-bold text-white mb-4">Vehicle Categories</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { name: "Rent", href: "/admin/cars", color: "from-blue-500/20 to-blue-600/20" },
+            { name: "Flexi Hire", href: "/admin/flexi-hire", color: "from-green-500/20 to-green-600/20" },
+            { name: "PCO Hire", href: "/admin/pco-hire", color: "from-purple-500/20 to-purple-600/20" },
+            { name: "Sales", href: "/admin/sales", color: "from-orange-500/20 to-orange-600/20" },
+          ].map((category) => (
+            <Link key={category.href} href={category.href}>
+              <Card className={`liquid-glass border-white/10 hover:border-white/20 transition-all cursor-pointer bg-gradient-to-br ${category.color}`}>
+                <div className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-white mb-1">{category.name}</h3>
+                      <p className="text-sm text-white/60">Manage {category.name} vehicles</p>
+                    </div>
+                    <Car className="h-8 w-8 text-white/40" />
+                  </div>
+                </div>
+              </Card>
+            </Link>
+          ))}
+        </div>
       </div>
     </div>
   )

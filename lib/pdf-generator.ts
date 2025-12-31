@@ -34,23 +34,103 @@ export interface AgreementData {
 // Works in both browser and Node.js environments
 // Returns an object with base64 data URL and dimensions
 export async function loadImage(src: string): Promise<{ dataUrl: string; width: number; height: number }> {
-  // If it's already a base64 data URL, extract dimensions if possible
+  // If it's already a base64 data URL, handle it directly
   if (src.startsWith('data:image')) {
-    // For base64, we'll use default dimensions and let jsPDF handle it
+    console.log("[PDF] Using base64 data URL directly")
+    // Try to get actual dimensions from the image in browser
+    if (typeof window !== 'undefined' && typeof window.Image !== 'undefined') {
+      return new Promise((resolve, reject) => {
+        const img = new window.Image()
+        img.onload = () => {
+          console.log("[PDF] Base64 image loaded, dimensions:", img.width, "x", img.height)
+          resolve({ dataUrl: src, width: img.width, height: img.height })
+        }
+        img.onerror = (err) => {
+          console.warn("[PDF] Could not load base64 image for dimensions, using defaults:", err)
+          resolve({ dataUrl: src, width: 200, height: 200 })
+        }
+        img.src = src
+      })
+    }
+    // For server-side, return with default dimensions
     return { dataUrl: src, width: 200, height: 200 }
   }
   
   try {
-    console.log("[PDF] Loading image:", src.substring(0, 100))
+    console.log("[PDF] Loading image from URL:", src.substring(0, 100))
+    
+    // In browser, try to load image directly first (more reliable for same-origin)
+    if (typeof window !== 'undefined' && typeof window.Image !== 'undefined' && !src.startsWith('http')) {
+      // For relative paths in browser, try direct image loading first
+      return new Promise((resolve, reject) => {
+        const img = new window.Image()
+        img.crossOrigin = 'anonymous' // Allow CORS if needed
+        img.onload = () => {
+          // Convert image to base64
+          const canvas = document.createElement('canvas')
+          canvas.width = img.width
+          canvas.height = img.height
+          const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            reject(new Error('Could not get canvas context'))
+            return
+          }
+          ctx.drawImage(img, 0, 0)
+          const dataUrl = canvas.toDataURL('image/png')
+          console.log("[PDF] Image loaded via canvas, dimensions:", img.width, "x", img.height)
+          resolve({ dataUrl, width: img.width, height: img.height })
+        }
+        img.onerror = (err) => {
+          console.warn("[PDF] Direct image load failed, trying fetch:", err)
+          // Fall through to fetch method
+          fetch(src)
+            .then(response => {
+              if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`)
+              return response.arrayBuffer()
+            })
+            .then(arrayBuffer => {
+              // Convert ArrayBuffer to base64 (handle large arrays)
+              const bytes = new Uint8Array(arrayBuffer)
+              let binary = ''
+              for (let i = 0; i < bytes.length; i++) {
+                binary += String.fromCharCode(bytes[i])
+              }
+              const base64 = btoa(binary)
+              const mimeType = 'image/png' // Default
+              const dataUrl = `data:${mimeType};base64,${base64}`
+              const img2 = new window.Image()
+              img2.onload = () => resolve({ dataUrl, width: img2.width, height: img2.height })
+              img2.onerror = () => resolve({ dataUrl, width: 200, height: 200 })
+              img2.src = dataUrl
+            })
+            .catch(reject)
+        }
+        // Use full URL if relative path
+        const fullSrc = src.startsWith('/') ? `${window.location.origin}${src}` : src
+        img.src = fullSrc
+      })
+    }
     
     // Fetch image in both browser and server environments
     const response = await fetch(src)
     if (!response.ok) {
-      throw new Error(`Failed to fetch image: ${response.statusText}`)
+      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`)
     }
     
     const arrayBuffer = await response.arrayBuffer()
-    const base64 = Buffer.from(arrayBuffer).toString('base64')
+    let base64: string
+    if (typeof Buffer !== 'undefined') {
+      // Server-side: use Buffer
+      base64 = Buffer.from(arrayBuffer).toString('base64')
+    } else {
+      // Client-side: convert ArrayBuffer to base64 (handle large arrays)
+      const bytes = new Uint8Array(arrayBuffer)
+      let binary = ''
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i])
+      }
+      base64 = btoa(binary)
+    }
     const mimeType = response.headers.get('content-type') || 'image/png'
     const dataUrl = `data:${mimeType};base64,${base64}`
     
@@ -62,7 +142,10 @@ export async function loadImage(src: string): Promise<{ dataUrl: string; width: 
           console.log("[PDF] Image loaded, dimensions:", img.width, "x", img.height)
           resolve({ dataUrl, width: img.width, height: img.height })
         }
-        img.onerror = reject
+        img.onerror = () => {
+          console.warn("[PDF] Could not get image dimensions, using defaults")
+          resolve({ dataUrl, width: 200, height: 200 })
+        }
         img.src = dataUrl
       })
     } else {
@@ -174,28 +257,58 @@ export async function generateRentalAgreementPDF(
     console.log("[PDF] Loading logo from:", logoPath)
     // Try to load logo - if it fails, try alternative paths
     let logoData: { dataUrl: string; width: number; height: number } | null = null
+    
+    // Helper to convert relative paths to full URLs for both client and server-side
+    const getFullUrl = (path: string): string => {
+      if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("data:")) {
+        return path
+      }
+      // If it's a relative path, convert to full URL
+      if (path.startsWith("/")) {
+        // Client-side: use window.location.origin
+        if (typeof window !== "undefined" && window.location) {
+          return `${window.location.origin}${path}`
+        }
+        // Server-side: use environment variables
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 
+                       process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
+                       (supabaseUrl ? new URL(supabaseUrl).origin : "http://localhost:3000")
+        return `${baseUrl}${path}`
+      }
+      return path
+    }
+    
     try {
-      logoData = await loadImage(logoPath)
+      const fullLogoPath = getFullUrl(logoPath)
+      console.log("[PDF] Attempting to load logo from:", fullLogoPath)
+      logoData = await loadImage(fullLogoPath)
+      console.log("[PDF] Logo loaded successfully from primary path")
     } catch (firstError) {
-      console.warn("[PDF] Failed to load logo from primary path, trying alternatives...")
+      console.warn("[PDF] Failed to load logo from primary path:", firstError)
+      console.warn("[PDF] Trying alternative logo paths...")
       // Try alternative logo paths
       const alternativePaths = [
         "/sed.jpg",
         "/images/dna-group-logo.png",
         "/dna-group-logo.png",
-        "dna-group-logo.png",
       ]
       for (const altPath of alternativePaths) {
         try {
-          logoData = await loadImage(altPath)
-          console.log("[PDF] Logo loaded from alternative path:", altPath)
+          const fullAltPath = getFullUrl(altPath)
+          console.log("[PDF] Trying alternative path:", fullAltPath)
+          logoData = await loadImage(fullAltPath)
+          console.log("[PDF] ✓ Logo loaded from alternative path:", fullAltPath)
           break
         } catch (err) {
+          console.warn("[PDF] ✗ Failed to load from alternative path:", altPath, err)
           continue
         }
       }
       if (!logoData) {
-        throw firstError
+        console.error("[PDF] ✗✗✗ Failed to load logo from ALL paths")
+        console.error("[PDF] Original error:", firstError)
+        throw new Error(`Failed to load logo. Tried: ${logoPath} and alternatives. Error: ${firstError instanceof Error ? firstError.message : String(firstError)}`)
       }
     }
     
@@ -217,9 +330,15 @@ export async function generateRentalAgreementPDF(
     } else if (logoPath.toLowerCase().endsWith('.jpg') || logoPath.toLowerCase().endsWith('.jpeg')) {
       imageFormat = "JPEG"
     }
+    // Verify logo data before adding
+    if (!logoData.dataUrl || logoData.dataUrl.length < 100) {
+      throw new Error("Logo data URL is invalid or too short")
+    }
+    
+    console.log("[PDF] Adding logo to PDF - Format:", imageFormat, "Data URL length:", logoData.dataUrl.length)
     doc.addImage(logoData.dataUrl, imageFormat, logoX, yPosition, logoWidth, logoHeight)
     console.log("[PDF] ✓ Logo added to PDF at position:", logoX, yPosition, "Size:", logoWidth, "x", logoHeight, "Format:", imageFormat)
-
+    
     // Company info next to logo
     const companyX = logoX + logoWidth + 8
     doc.setFontSize(9)
@@ -387,7 +506,33 @@ export async function generateRentalAgreementPDF(
   if (data.customer_signature) {
     try {
       console.log("[PDF] Loading customer signature from:", data.customer_signature.substring(0, 100))
-      const customerSigData = await loadImage(data.customer_signature)
+      
+      // If it's already a base64 data URL, use it directly without fetch
+      let customerSigData: { dataUrl: string; width: number; height: number }
+      
+      if (data.customer_signature.startsWith('data:image')) {
+        console.log("[PDF] Signature is base64 data URL, using directly")
+        // Get dimensions from the image
+        if (typeof window !== 'undefined' && typeof window.Image !== 'undefined') {
+          customerSigData = await new Promise((resolve, reject) => {
+            const img = new window.Image()
+            img.onload = () => {
+              resolve({ dataUrl: data.customer_signature!, width: img.width, height: img.height })
+            }
+            img.onerror = () => {
+              // Fallback to default dimensions
+              resolve({ dataUrl: data.customer_signature!, width: 200, height: 200 })
+            }
+            img.src = data.customer_signature
+          })
+        } else {
+          customerSigData = { dataUrl: data.customer_signature, width: 200, height: 200 }
+        }
+      } else {
+        // It's a URL, use loadImage
+        customerSigData = await loadImage(data.customer_signature)
+      }
+      
       console.log("[PDF] Customer signature image loaded successfully, dimensions:", customerSigData.width, "x", customerSigData.height)
       const sigWidth = 60
       const sigHeight = (customerSigData.height / customerSigData.width) * sigWidth
@@ -401,7 +546,7 @@ export async function generateRentalAgreementPDF(
     } catch (err) {
       console.error("[PDF] ✗ Could not load customer signature:", err)
       console.error("[PDF] Error details:", err instanceof Error ? err.message : String(err))
-      console.error("[PDF] Signature URL was:", data.customer_signature)
+      console.error("[PDF] Signature URL was:", data.customer_signature?.substring(0, 200))
       // Draw a line for signature if image fails
       doc.setDrawColor(150, 150, 150)
       doc.setLineWidth(0.5)

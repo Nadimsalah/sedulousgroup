@@ -157,16 +157,24 @@ export async function signAgreement(bookingId: string, signatureUrl: string, agr
     const isAdminSignature = adminSignature && adminSignature.startsWith("data:image")
 
     const updateData: any = {
-      signed_agreement_url: signatureUrl, // Customer signature URL
-      status: "signed",
+      // DON'T set signed_agreement_url here - it will be set by PDF generation
+      // signed_agreement_url should only contain the final PDF URL, not the signature image
+      status: "pending", // Will be updated to "signed" when PDF is generated
       signed_at: new Date().toISOString(),
     }
 
-    // Don't overwrite admin signature - keep it in customer_signature_data
-    // Customer signature is stored in signed_agreement_url
+    // Store customer signature in customer_signature_data so we don't lose it when signed_agreement_url is overwritten with PDF
+    // Don't overwrite admin signature - keep it in customer_signature_data if it exists
     if (!isAdminSignature) {
       // Only update if it's not an admin signature
       updateData.customer_signature_data = signatureUrl
+    } else {
+      // If admin signature exists, we need to preserve customer signature separately
+      // Store it in a way we can retrieve it later
+      updateData.customer_signature_data = JSON.stringify({
+        admin_signature: adminSignature,
+        customer_signature: signatureUrl
+      })
     }
 
     // Update agreement with signature

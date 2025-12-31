@@ -20,10 +20,12 @@ function createAdminSupabase() {
 
 export interface Deposit {
   id: string
+  agreement_id?: string | null
   booking_id: string | null
-  customer_name: string
-  customer_email: string
-  vehicle_name: string | null
+  customer_id?: string | null
+  customer_name?: string
+  customer_email?: string
+  vehicle_name?: string | null
   amount: number
   status: string
   payment_method: string | null
@@ -61,28 +63,67 @@ export async function createDeposit(deposit: Omit<Deposit, "id" | "created_at" |
   try {
     const supabase = createAdminSupabase()
 
+    console.log("[Deposits Action] Creating deposit with data:", {
+      booking_id: deposit.booking_id,
+      customer_name: deposit.customer_name,
+      customer_email: deposit.customer_email,
+      amount: deposit.amount,
+    })
+
+    // Build insert data based on the schema in 900_create_agreements_workflow_schema.sql
+    // This schema requires: agreement_id, customer_id, booking_id, amount, status
+    // It does NOT have: customer_email, customer_name, vehicle_name
+    
+    if (!deposit.agreement_id) {
+      console.error("[Deposits Action] agreement_id is required but not provided")
+      return { 
+        success: false, 
+        error: "Agreement ID is required. Please create an agreement for this booking first." 
+      }
+    }
+
+    if (!deposit.customer_id) {
+      console.error("[Deposits Action] customer_id is required but not provided")
+      return { 
+        success: false, 
+        error: "Customer ID is required. The booking must have a user_id." 
+      }
+    }
+
+    const insertData: any = {
+      agreement_id: deposit.agreement_id,
+      booking_id: deposit.booking_id,
+      customer_id: deposit.customer_id,
+      amount: deposit.amount,
+      status: deposit.status || "held",
+    }
+
+    // Add optional fields that exist in this schema
+    if (deposit.payment_method) insertData.payment_method = deposit.payment_method
+    if (deposit.transaction_id) insertData.transaction_id = deposit.transaction_id
+    if (deposit.notes) insertData.notes = deposit.notes
+
+    // Note: customer_email, customer_name, and vehicle_name are NOT in this schema
+
     const { data, error } = await supabase
       .from("deposits")
-      .insert({
-        booking_id: deposit.booking_id,
-        customer_name: deposit.customer_name,
-        customer_email: deposit.customer_email,
-        vehicle_name: deposit.vehicle_name,
-        amount: deposit.amount,
-        status: deposit.status || "held",
-        payment_method: deposit.payment_method,
-        transaction_id: deposit.transaction_id,
-        notes: deposit.notes,
-      })
+      .insert(insertData)
       .select()
       .single()
 
     if (error) {
+      console.error("[Deposits Action] Error creating deposit:", error)
+      console.error("[Deposits Action] Error code:", error.code)
+      console.error("[Deposits Action] Error message:", error.message)
+      console.error("[Deposits Action] Error details:", error.details)
+      console.error("[Deposits Action] Error hint:", error.hint)
       return { success: false, error: error.message }
     }
 
+    console.log("[Deposits Action] Deposit created successfully:", data.id)
     return { success: true, data }
   } catch (error) {
+    console.error("[Deposits Action] Exception creating deposit:", error)
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
@@ -90,28 +131,37 @@ export async function createDeposit(deposit: Omit<Deposit, "id" | "created_at" |
   }
 }
 
-export async function refundDeposit(id: string, refundAmount: number) {
+export async function refundDeposit(id: string, refundAmount: number, notes?: string) {
   try {
     const supabase = createAdminSupabase()
 
+    const updateData: any = {
+      status: "refunded",
+      refund_amount: refundAmount,
+      refunded_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+
+    if (notes) {
+      updateData.notes = notes
+    }
+
     const { data, error } = await supabase
       .from("deposits")
-      .update({
-        status: "refunded",
-        refund_amount: refundAmount,
-        refunded_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq("id", id)
       .select()
       .single()
 
     if (error) {
+      console.error("[Deposits Action] Error refunding deposit:", error)
       return { success: false, error: error.message }
     }
 
+    console.log("[Deposits Action] Deposit refunded successfully:", id)
     return { success: true, data }
   } catch (error) {
+    console.error("[Deposits Action] Error refunding deposit:", error)
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
@@ -119,28 +169,43 @@ export async function refundDeposit(id: string, refundAmount: number) {
   }
 }
 
-export async function deductFromDeposit(id: string, deductAmount: number, reason: string) {
+export async function deductFromDeposit(id: string, deductAmount: number, reason: string, notes?: string) {
   try {
     const supabase = createAdminSupabase()
 
+    // Get the deposit first to calculate refund amount
+    const { data: depositData } = await supabase.from("deposits").select("amount").eq("id", id).single()
+    const refundAmt = depositData ? Math.max(0, depositData.amount - deductAmount) : 0
+
+    const updateData: any = {
+      status: "deducted",
+      deduction_amount: deductAmount,
+      deduction_reason: reason,
+      refund_amount: refundAmt > 0 ? refundAmt : null,
+      refunded_at: refundAmt > 0 ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    }
+
+    if (notes) {
+      updateData.notes = notes
+    }
+
     const { data, error } = await supabase
       .from("deposits")
-      .update({
-        status: "deducted",
-        deduction_amount: deductAmount,
-        deduction_reason: reason,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq("id", id)
       .select()
       .single()
 
     if (error) {
+      console.error("[Deposits Action] Error deducting from deposit:", error)
       return { success: false, error: error.message }
     }
 
+    console.log("[Deposits Action] Deposit deduction processed successfully:", id)
     return { success: true, data }
   } catch (error) {
+    console.error("[Deposits Action] Error deducting from deposit:", error)
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",

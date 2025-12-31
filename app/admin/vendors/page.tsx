@@ -18,14 +18,17 @@ import {
 import { Label } from "@/components/ui/label"
 import { getVendors, createVendor, updateVendor, deleteVendor } from "@/app/actions/vendors"
 import type { Vendor } from "@/lib/database"
+import { toast } from "sonner"
 
 export default function VendorsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
+  const [filterType, setFilterType] = useState<"all" | "active" | "inactive" | "mechanic" | "body_shop" | "supplier" | "insurance" | "other">("all")
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null)
   const [showEditDialog, setShowEditDialog] = useState(false)
+  const [isCreating, setIsCreating] = useState(false)
 
   const [newVendor, setNewVendor] = useState({
     name: "",
@@ -54,12 +57,20 @@ export default function VendorsPage() {
   }
 
   const handleCreateVendor = async () => {
+    // Validate required fields
+    if (!newVendor.name || newVendor.name.trim() === "") {
+      toast.error("Please enter vendor name")
+      return
+    }
+
+    setIsCreating(true)
     try {
+      console.log("[Vendors Page] Creating vendor:", newVendor)
       const result = await createVendor(newVendor)
 
       if (result.success) {
+        toast.success("Vendor created successfully!")
         setShowCreateDialog(false)
-        loadVendors()
         setNewVendor({
           name: "",
           vendorType: "mechanic",
@@ -69,14 +80,32 @@ export default function VendorsPage() {
           address: "",
           notes: "",
         })
+        await loadVendors()
+      } else {
+        const errorMessage = result.error instanceof Error ? result.error.message : String(result.error)
+        console.error("[Vendors Page] Failed to create vendor:", errorMessage)
+        toast.error(`Failed to create vendor: ${errorMessage}`, {
+          duration: 5000,
+        })
       }
     } catch (error) {
-      console.error("Error creating vendor:", error)
+      console.error("[Vendors Page] Error creating vendor:", error)
+      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred"
+      toast.error(`Error: ${errorMessage}`, {
+        duration: 5000,
+      })
+    } finally {
+      setIsCreating(false)
     }
   }
 
   const handleUpdateVendor = async () => {
     if (!selectedVendor) return
+
+    if (!selectedVendor.name || selectedVendor.name.trim() === "") {
+      toast.error("Please enter vendor name")
+      return
+    }
 
     try {
       const result = await updateVendor(selectedVendor.id, {
@@ -90,11 +119,17 @@ export default function VendorsPage() {
       })
 
       if (result.success) {
+        toast.success("Vendor updated successfully!")
         setShowEditDialog(false)
-        loadVendors()
+        await loadVendors()
+      } else {
+        const errorMessage = result.error instanceof Error ? result.error.message : String(result.error)
+        toast.error(`Failed to update vendor: ${errorMessage}`)
       }
     } catch (error) {
       console.error("Error updating vendor:", error)
+      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred"
+      toast.error(`Error: ${errorMessage}`)
     }
   }
 
@@ -104,19 +139,40 @@ export default function VendorsPage() {
     try {
       const result = await deleteVendor(vendorId)
       if (result.success) {
-        loadVendors()
+        toast.success("Vendor deleted successfully!")
+        await loadVendors()
+      } else {
+        const errorMessage = result.error instanceof Error ? result.error.message : String(result.error)
+        toast.error(`Failed to delete vendor: ${errorMessage}`)
       }
     } catch (error) {
       console.error("Error deleting vendor:", error)
+      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred"
+      toast.error(`Error: ${errorMessage}`)
     }
   }
 
-  const filteredVendors = vendors.filter(
-    (vendor) =>
-      vendor.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      vendor.vendorType.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (vendor.contactPerson && vendor.contactPerson.toLowerCase().includes(searchQuery.toLowerCase())),
-  )
+  const filteredVendors = vendors.filter((vendor) => {
+    // Apply type filter
+    if (filterType === "active" && !vendor.isActive) return false
+    if (filterType === "inactive" && vendor.isActive) return false
+    if (filterType === "mechanic" && vendor.vendorType !== "mechanic") return false
+    if (filterType === "body_shop" && vendor.vendorType !== "body_shop") return false
+    if (filterType === "supplier" && vendor.vendorType !== "supplier") return false
+    if (filterType === "insurance" && vendor.vendorType !== "insurance") return false
+    if (filterType === "other" && vendor.vendorType !== "other") return false
+    // filterType === "all" shows everything
+
+    // Apply search query
+    const query = searchQuery.toLowerCase()
+    return (
+      vendor.name.toLowerCase().includes(query) ||
+      vendor.vendorType.toLowerCase().includes(query) ||
+      (vendor.contactPerson && vendor.contactPerson.toLowerCase().includes(query)) ||
+      (vendor.email && vendor.email.toLowerCase().includes(query)) ||
+      (vendor.phone && vendor.phone.toLowerCase().includes(query))
+    )
+  })
 
   const stats = {
     total: vendors.length,
@@ -251,8 +307,8 @@ export default function VendorsPage() {
                   />
                 </div>
 
-                <Button onClick={handleCreateVendor} className="w-full bg-red-500 hover:bg-red-600">
-                  Create Vendor
+                <Button onClick={handleCreateVendor} disabled={isCreating} className="w-full bg-red-500 hover:bg-red-600">
+                  {isCreating ? "Creating..." : "Create Vendor"}
                 </Button>
               </div>
             </DialogContent>
@@ -279,17 +335,44 @@ export default function VendorsPage() {
           </div>
         </div>
 
-        {/* Search */}
-        <div className="liquid-glass rounded-lg p-3 border border-white/10">
+        {/* Search and Filters */}
+        <div className="liquid-glass rounded-lg p-3 border border-white/10 space-y-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-white/40" />
             <Input
               type="text"
-              placeholder="Search vendors..."
+              placeholder="Search vendors by name, type, email, or phone..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 w-full bg-white/5 border-white/10 text-white placeholder:text-white/40"
             />
+          </div>
+
+          {/* Filter Buttons */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-white/70">Filter:</span>
+            {[
+              { key: "all", label: "All", count: vendors.length },
+              { key: "active", label: "Active", count: stats.active },
+              { key: "inactive", label: "Inactive", count: stats.inactive },
+              { key: "mechanic", label: "Mechanics", count: stats.mechanics },
+              { key: "body_shop", label: "Body Shops", count: vendors.filter((v) => v.vendorType === "body_shop").length },
+              { key: "supplier", label: "Suppliers", count: vendors.filter((v) => v.vendorType === "supplier").length },
+              { key: "insurance", label: "Insurance", count: vendors.filter((v) => v.vendorType === "insurance").length },
+              { key: "other", label: "Other", count: vendors.filter((v) => v.vendorType === "other").length },
+            ].map((filter) => (
+              <button
+                key={filter.key}
+                onClick={() => setFilterType(filter.key as any)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  filterType === filter.key
+                    ? "bg-gradient-to-r from-red-500 to-rose-600 text-white shadow-lg shadow-red-500/50"
+                    : "bg-white/10 text-gray-300 hover:bg-white/20 border border-white/20"
+                }`}
+              >
+                {filter.label} ({filter.count})
+              </button>
+            ))}
           </div>
         </div>
 

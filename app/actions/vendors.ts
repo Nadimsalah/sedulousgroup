@@ -1,6 +1,7 @@
 "use server"
 
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/server"
+import { db } from "@/lib/database"
 import type { Vendor } from "@/lib/database"
 
 export async function createVendor(data: {
@@ -13,38 +14,58 @@ export async function createVendor(data: {
   notes?: string
 }) {
   try {
-    const supabase = await createClient()
+    console.log("[Vendors] Creating vendor with data:", {
+      name: data.name,
+      vendorType: data.vendorType,
+      email: data.email,
+    })
 
-    const { data: vendor, error } = await supabase
-      .from("vendors")
-      .insert({
-        name: data.name,
-        vendor_type: data.vendorType,
-        contact_person: data.contactPerson,
-        email: data.email,
-        phone: data.phone,
-        address: data.address,
-        notes: data.notes,
-        is_active: true,
-      })
-      .select()
-      .single()
+    // Use database method which uses admin client
+    const vendor = await db.createVendor({
+      name: data.name,
+      vendorType: data.vendorType,
+      contactPerson: data.contactPerson || undefined,
+      email: data.email || undefined,
+      phone: data.phone || undefined,
+      address: data.address || undefined,
+      rating: undefined,
+      notes: data.notes || undefined,
+      isActive: true,
+    })
 
-    if (error) throw error
+    if (!vendor) {
+      console.error("[Vendors] Failed to create vendor - no data returned")
+      return { success: false, error: "Failed to create vendor: No data returned from database" }
+    }
+
+    console.log("[Vendors] Vendor created successfully:", vendor.id)
     return { success: true, vendor }
   } catch (error) {
-    console.error("[v0] Error creating vendor:", error)
-    return { success: false, error }
+    console.error("[Vendors] Error creating vendor:", error)
+    const errorMessage = error instanceof Error ? error.message : "Unknown error"
+    return { success: false, error: errorMessage }
   }
 }
 
 export async function getVendors(): Promise<Vendor[]> {
   try {
-    const supabase = await createClient()
+    // Use admin client to bypass RLS
+    const supabase = await createAdminClient()
+    if (!supabase) {
+      console.error("[Vendors] No admin client available")
+      return []
+    }
+
+    console.log("[Vendors] Fetching all vendors...")
 
     const { data, error } = await supabase.from("vendors").select("*").order("name", { ascending: true })
 
-    if (error) throw error
+    if (error) {
+      console.error("[Vendors] Error fetching vendors:", error)
+      throw error
+    }
+
+    console.log(`[Vendors] Found ${data?.length || 0} vendors`)
 
     return (data || []).map((vendor) => ({
       id: vendor.id,
@@ -61,7 +82,7 @@ export async function getVendors(): Promise<Vendor[]> {
       updatedAt: vendor.updated_at,
     }))
   } catch (error) {
-    console.error("[v0] Error getting vendors:", error)
+    console.error("[Vendors] Error getting vendors:", error)
     return []
   }
 }
@@ -80,7 +101,12 @@ export async function updateVendor(
   },
 ) {
   try {
-    const supabase = await createClient()
+    // Use admin client to bypass RLS
+    const supabase = await createAdminClient()
+    if (!supabase) {
+      console.error("[Vendors] No admin client available for updating vendor")
+      return { success: false, error: "No admin client available" }
+    }
 
     const updateData: any = {}
     if (updates.name) updateData.name = updates.name
@@ -94,24 +120,39 @@ export async function updateVendor(
 
     const { error } = await supabase.from("vendors").update(updateData).eq("id", vendorId)
 
-    if (error) throw error
+    if (error) {
+      console.error("[Vendors] Error updating vendor:", error)
+      throw error
+    }
+
     return { success: true }
   } catch (error) {
-    console.error("[v0] Error updating vendor:", error)
-    return { success: false, error }
+    console.error("[Vendors] Error updating vendor:", error)
+    const errorMessage = error instanceof Error ? error.message : "Unknown error"
+    return { success: false, error: errorMessage }
   }
 }
 
 export async function deleteVendor(vendorId: string) {
   try {
-    const supabase = await createClient()
+    // Use admin client to bypass RLS
+    const supabase = await createAdminClient()
+    if (!supabase) {
+      console.error("[Vendors] No admin client available for deleting vendor")
+      return { success: false, error: "No admin client available" }
+    }
 
     const { error } = await supabase.from("vendors").delete().eq("id", vendorId)
 
-    if (error) throw error
+    if (error) {
+      console.error("[Vendors] Error deleting vendor:", error)
+      throw error
+    }
+
     return { success: true }
   } catch (error) {
-    console.error("[v0] Error deleting vendor:", error)
-    return { success: false, error }
+    console.error("[Vendors] Error deleting vendor:", error)
+    const errorMessage = error instanceof Error ? error.message : "Unknown error"
+    return { success: false, error: errorMessage }
   }
 }

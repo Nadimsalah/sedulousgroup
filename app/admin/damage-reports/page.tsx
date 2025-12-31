@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { getDamageReports, createDamageReport } from "@/app/actions/damage-reports"
+import { getDamageReports, createDamageReport, updateDamageReportStatus } from "@/app/actions/damage-reports"
 import { getCarsAction } from "@/app/actions/database"
 import { toast } from "sonner"
 
@@ -21,9 +21,13 @@ export default function DamageReportsPage() {
   const [vehicles, setVehicles] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
+  const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "in_progress" | "completed">("all")
   const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [showViewDialog, setShowViewDialog] = useState(false)
+  const [selectedReport, setSelectedReport] = useState<any>(null)
   const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([])
   const [isCreating, setIsCreating] = useState(false)
+  const [isUpdating, setIsUpdating] = useState(false)
 
   const [newReport, setNewReport] = useState({
     vehicleId: "",
@@ -41,10 +45,19 @@ export default function DamageReportsPage() {
 
   const loadData = async () => {
     setIsLoading(true)
-    const [fetchedReports, fetchedVehicles] = await Promise.all([getDamageReports(), getCarsAction()])
-    setReports(fetchedReports)
-    setVehicles(fetchedVehicles)
-    setIsLoading(false)
+    try {
+      console.log("[Damage Reports Page] Loading data...")
+      const [fetchedReports, fetchedVehicles] = await Promise.all([getDamageReports(), getCarsAction()])
+      console.log("[Damage Reports Page] Loaded reports:", fetchedReports.length)
+      console.log("[Damage Reports Page] Loaded vehicles:", fetchedVehicles?.length || 0)
+      setReports(fetchedReports || [])
+      setVehicles(fetchedVehicles || [])
+    } catch (error) {
+      console.error("[Damage Reports Page] Error loading data:", error)
+      toast.error("Failed to load damage reports")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -65,47 +78,97 @@ export default function DamageReportsPage() {
   }
 
   const handleCreateReport = async () => {
-    if (!newReport.vehicleId || !newReport.description) {
-      toast.error("Please fill required fields")
+    // Validate required fields
+    if (!newReport.vehicleId) {
+      toast.error("Please select a vehicle")
+      return
+    }
+
+    if (!newReport.description || newReport.description.trim() === "") {
+      toast.error("Please enter a description")
       return
     }
 
     setIsCreating(true)
-    const result = await createDamageReport({
-      ...newReport,
-      bookingId: "",
-      agreementId: "",
-      damagePhotos: uploadedPhotos,
-      damageVideos: [],
-      responsibleParty: "customer",
-      notes: "",
-    })
-
-    if (result.success) {
-      toast.success("Report created!")
-      setShowCreateDialog(false)
-      loadData()
-      setNewReport({
-        vehicleId: "",
-        damageType: "scratch",
-        severity: "minor",
-        description: "",
-        locationOnVehicle: "",
-        incidentDate: new Date().toISOString().split("T")[0],
-        estimatedCost: 0,
+    try {
+      console.log("[Damage Reports] Creating report:", {
+        vehicleId: newReport.vehicleId,
+        damageType: newReport.damageType,
+        severity: newReport.severity,
+        description: newReport.description,
+        photosCount: uploadedPhotos.length,
       })
-      setUploadedPhotos([])
-    } else {
-      toast.error("Failed to create report")
+
+      const result = await createDamageReport({
+        vehicleId: newReport.vehicleId,
+        damageType: newReport.damageType,
+        severity: newReport.severity,
+        description: newReport.description,
+        locationOnVehicle: newReport.locationOnVehicle || undefined,
+        incidentDate: newReport.incidentDate,
+        damagePhotos: uploadedPhotos,
+        damageVideos: [],
+        estimatedCost: newReport.estimatedCost || undefined,
+        responsibleParty: "customer",
+        notes: "",
+        bookingId: undefined,
+        agreementId: undefined,
+        customerId: undefined,
+        reportedBy: undefined,
+      })
+
+      console.log("[Damage Reports] Create result:", result)
+
+      if (result.success) {
+        toast.success("Damage report created successfully!")
+        setShowCreateDialog(false)
+        // Reset form
+        setNewReport({
+          vehicleId: "",
+          damageType: "scratch",
+          severity: "minor",
+          description: "",
+          locationOnVehicle: "",
+          incidentDate: new Date().toISOString().split("T")[0],
+          estimatedCost: 0,
+        })
+        setUploadedPhotos([])
+        // Reload data
+        await loadData()
+      } else {
+        const errorMessage = result.error instanceof Error ? result.error.message : String(result.error)
+        console.error("[Damage Reports] Failed to create report:", errorMessage)
+        toast.error(`Failed to create report: ${errorMessage}`, {
+          duration: 5000,
+        })
+      }
+    } catch (error) {
+      console.error("[Damage Reports] Unexpected error:", error)
+      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred"
+      toast.error(`Error: ${errorMessage}`, {
+        duration: 5000,
+      })
+    } finally {
+      setIsCreating(false)
     }
-    setIsCreating(false)
   }
 
-  const filteredReports = reports.filter(
-    (r) =>
-      r.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.damageType?.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+  const filteredReports = reports.filter((r) => {
+    // Apply status filter
+    if (filterStatus === "pending" && r.repairStatus !== "pending") return false
+    if (filterStatus === "in_progress" && r.repairStatus !== "in_progress") return false
+    if (filterStatus === "completed" && r.repairStatus !== "completed") return false
+    // filterStatus === "all" shows everything
+
+    // Apply search query
+    const query = searchQuery.toLowerCase()
+    return (
+      r.description?.toLowerCase().includes(query) ||
+      r.damageType?.toLowerCase().includes(query) ||
+      r.locationOnVehicle?.toLowerCase().includes(query) ||
+      vehicles.find((v) => v.id === r.vehicleId)?.name?.toLowerCase().includes(query)
+    )
+  })
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
@@ -361,16 +424,39 @@ export default function DamageReportsPage() {
           </Card>
         </div>
 
-        {/* Search */}
-        <div className="liquid-glass rounded-xl p-3 border border-white/10">
+        {/* Search and Filters */}
+        <div className="liquid-glass rounded-xl p-3 border border-white/10 space-y-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
             <Input
-              placeholder="Search by description or damage type..."
+              placeholder="Search by description, damage type, or vehicle..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/40"
             />
+          </div>
+
+          {/* Filter Buttons */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-white/70">Filter:</span>
+            {[
+              { key: "all", label: "All", count: reports.length },
+              { key: "pending", label: "Pending", count: stats.pending },
+              { key: "in_progress", label: "In Progress", count: stats.inProgress },
+              { key: "completed", label: "Completed", count: stats.completed },
+            ].map((filter) => (
+              <button
+                key={filter.key}
+                onClick={() => setFilterStatus(filter.key as any)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  filterStatus === filter.key
+                    ? "bg-gradient-to-r from-red-500 to-rose-600 text-white shadow-lg shadow-red-500/50"
+                    : "bg-white/10 text-gray-300 hover:bg-white/20 border border-white/20"
+                }`}
+              >
+                {filter.label} ({filter.count})
+              </button>
+            ))}
           </div>
         </div>
 
@@ -418,6 +504,10 @@ export default function DamageReportsPage() {
                       <Button
                         size="sm"
                         variant="outline"
+                        onClick={() => {
+                          setSelectedReport(report)
+                          setShowViewDialog(true)
+                        }}
                         className="bg-white/5 border-white/10 text-white hover:bg-white/10 shrink-0"
                       >
                         <Eye className="h-4 w-4 mr-2" />
@@ -430,6 +520,176 @@ export default function DamageReportsPage() {
             </div>
           )}
         </div>
+
+        {/* View/Edit Dialog */}
+        <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
+          <DialogContent className="bg-black border border-white/10 text-white max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold text-white">Damage Report Details</DialogTitle>
+            </DialogHeader>
+
+            {selectedReport && (
+              <div className="space-y-4 mt-4">
+                {/* Report Info */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm text-white/60">Vehicle</Label>
+                    <p className="text-white font-medium">
+                      {vehicles.find((v) => v.id === selectedReport.vehicleId)?.name || "Unknown"}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-white/60">Damage Type</Label>
+                    <p className="text-white font-medium capitalize">{selectedReport.damageType}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-white/60">Severity</Label>
+                    <Badge className={`${getSeverityColor(selectedReport.severity)}`}>{selectedReport.severity}</Badge>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-white/60">Current Status</Label>
+                    <Badge className={`${getStatusColor(selectedReport.repairStatus)}`}>{selectedReport.repairStatus}</Badge>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-white/60">Location</Label>
+                    <p className="text-white">{selectedReport.locationOnVehicle || "N/A"}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-white/60">Incident Date</Label>
+                    <p className="text-white">{new Date(selectedReport.incidentDate).toLocaleDateString()}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-white/60">Estimated Cost</Label>
+                    <p className="text-white">£{selectedReport.estimatedCost || 0}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-white/60">Actual Cost</Label>
+                    <p className="text-white">£{selectedReport.actualCost || "N/A"}</p>
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-sm text-white/60">Description</Label>
+                  <p className="text-white bg-white/5 p-3 rounded-lg">{selectedReport.description}</p>
+                </div>
+
+                {/* Photos */}
+                {selectedReport.damagePhotos && selectedReport.damagePhotos.length > 0 && (
+                  <div>
+                    <Label className="text-sm text-white/60 mb-2 block">Damage Photos</Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {selectedReport.damagePhotos.map((url: string, i: number) => (
+                        <img
+                          key={i}
+                          src={url}
+                          alt={`Damage ${i + 1}`}
+                          className="w-full aspect-square object-cover rounded-lg border border-white/10"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Status Update */}
+                <div className="border-t border-white/10 pt-4">
+                  <Label className="text-sm text-white mb-2 block">Update Status</Label>
+                  <div className="flex gap-2">
+                    <Select
+                      value={selectedReport.repairStatus}
+                      onValueChange={async (value) => {
+                        setIsUpdating(true)
+                        try {
+                          const result = await updateDamageReportStatus(selectedReport.id, {
+                            repairStatus: value,
+                          })
+                          if (result.success) {
+                            toast.success("Status updated successfully!")
+                            await loadData()
+                            setSelectedReport({ ...selectedReport, repairStatus: value })
+                          } else {
+                            toast.error("Failed to update status")
+                          }
+                        } catch (error) {
+                          console.error("Error updating status:", error)
+                          toast.error("An error occurred")
+                        } finally {
+                          setIsUpdating(false)
+                        }
+                      }}
+                      disabled={isUpdating}
+                    >
+                      <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-black border-white/10">
+                        <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="in_progress">In Progress</SelectItem>
+                        <SelectItem value="completed">Completed</SelectItem>
+                        <SelectItem value="no_repair_needed">No Repair Needed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Additional Fields */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm text-white">Actual Cost (£)</Label>
+                    <Input
+                      type="number"
+                      value={selectedReport.actualCost || ""}
+                      onChange={async (e) => {
+                        const value = e.target.value ? Number.parseFloat(e.target.value) : undefined
+                        setIsUpdating(true)
+                        try {
+                          const result = await updateDamageReportStatus(selectedReport.id, {
+                            actualCost: value,
+                          })
+                          if (result.success) {
+                            setSelectedReport({ ...selectedReport, actualCost: value })
+                            await loadData()
+                          }
+                        } catch (error) {
+                          console.error("Error updating cost:", error)
+                        } finally {
+                          setIsUpdating(false)
+                        }
+                      }}
+                      className="bg-white/5 border-white/10 text-white"
+                      placeholder="Enter actual cost"
+                      disabled={isUpdating}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm text-white">Repaired By</Label>
+                    <Input
+                      value={selectedReport.repairedBy || ""}
+                      onChange={async (e) => {
+                        setIsUpdating(true)
+                        try {
+                          const result = await updateDamageReportStatus(selectedReport.id, {
+                            repairedBy: e.target.value || undefined,
+                          })
+                          if (result.success) {
+                            setSelectedReport({ ...selectedReport, repairedBy: e.target.value })
+                            await loadData()
+                          }
+                        } catch (error) {
+                          console.error("Error updating repaired by:", error)
+                        } finally {
+                          setIsUpdating(false)
+                        }
+                      }}
+                      className="bg-white/5 border-white/10 text-white"
+                      placeholder="Enter repairer name"
+                      disabled={isUpdating}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   )

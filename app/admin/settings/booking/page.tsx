@@ -1,15 +1,19 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Save, ArrowLeft } from "lucide-react"
+import { Save, ArrowLeft, Loader2 } from "lucide-react"
 import Link from "next/link"
+import { toast } from "sonner"
+import { getBookingSettings, updateBookingSettings } from "@/app/actions/settings"
 
 export default function BookingSettingsPage() {
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
   const [settings, setSettings] = useState({
     minBookingDays: "1",
     maxBookingDays: "30",
@@ -23,8 +27,82 @@ export default function BookingSettingsPage() {
     cancellationDeadlineHours: "48",
   })
 
+  useEffect(() => {
+    loadSettings()
+  }, [])
+
+  const loadSettings = async () => {
+    setIsLoading(true)
+    try {
+      const data = await getBookingSettings()
+      setSettings({
+        minBookingDays: String(data.min_booking_days || 1),
+        maxBookingDays: String(data.max_booking_days || 30),
+        advanceBookingDays: String(data.advance_booking_days || 90),
+        bufferHours: String(data.buffer_hours || 2),
+        autoApproval: data.auto_approval || false,
+        requireDocuments: data.require_documents !== false,
+        requireDeposit: data.require_deposit !== false,
+        allowModification: data.allow_modification !== false,
+        modificationDeadlineHours: String(data.modification_deadline_hours || 24),
+        cancellationDeadlineHours: String(data.cancellation_deadline_hours || 48),
+      })
+    } catch (error) {
+      console.error("Error loading booking settings:", error)
+      toast.error("Failed to load booking settings")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSave = async () => {
+    setIsSaving(true)
+    try {
+      const result = await updateBookingSettings({
+        min_booking_days: Number.parseInt(settings.minBookingDays) || 1,
+        max_booking_days: Number.parseInt(settings.maxBookingDays) || 30,
+        advance_booking_days: Number.parseInt(settings.advanceBookingDays) || 90,
+        buffer_hours: Number.parseInt(settings.bufferHours) || 2,
+        auto_approval: settings.autoApproval,
+        require_documents: settings.requireDocuments,
+        require_deposit: settings.requireDeposit,
+        allow_modification: settings.allowModification,
+        modification_deadline_hours: Number.parseInt(settings.modificationDeadlineHours) || 24,
+        cancellation_deadline_hours: Number.parseInt(settings.cancellationDeadlineHours) || 48,
+      })
+
+      if (result.success) {
+        toast.success("Booking settings saved successfully")
+      } else {
+        const errorMsg = result.error || "Failed to save booking settings"
+        toast.error(errorMsg, {
+          action: errorMsg.includes("table does not exist") ? {
+            label: "Setup Database",
+            onClick: () => window.location.href = "/admin/settings/setup"
+          } : undefined
+        })
+      }
+    } catch (error) {
+      console.error("Error saving booking settings:", error)
+      toast.error("Failed to save booking settings")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-black p-3 md:p-6 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-white mx-auto mb-4" />
+          <p className="text-white/60">Loading booking settings...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="min-h-screen bg-black p-3 md:p-6 space-y-6">
       <div className="flex items-center gap-4">
         <Link href="/admin/settings">
           <Button variant="ghost" size="icon" className="text-white hover:bg-white/10">
@@ -176,9 +254,22 @@ export default function BookingSettingsPage() {
           </div>
 
           <div className="flex justify-end pt-4">
-            <Button className="bg-red-500 hover:bg-red-600 text-white">
-              <Save className="h-4 w-4 mr-2" />
-              Save Changes
+            <Button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save Changes
+                </>
+              )}
             </Button>
           </div>
         </div>

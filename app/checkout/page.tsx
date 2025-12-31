@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"
-import { ArrowLeft, MapPin, Calendar, Clock, User, Phone, Mail, CreditCard } from "lucide-react"
+import { ArrowLeft, MapPin, Calendar, Clock, User, Phone, Mail, CreditCard, IdCard } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -51,6 +51,7 @@ export default function CheckoutPage() {
     lastName: "",
     email: "",
     phone: "",
+    drivingLicense: "",
   })
 
   useEffect(() => {
@@ -146,6 +147,10 @@ export default function CheckoutPage() {
       setError("Please enter your phone number")
       return
     }
+    if (!formData.drivingLicense) {
+      setError("Please enter your driving license number")
+      return
+    }
     if (!tripDetails.pickupDate || !tripDetails.dropoffDate) {
       setError("Please select pickup and dropoff dates")
       return
@@ -166,6 +171,7 @@ export default function CheckoutPage() {
           customerName: `${formData.firstName} ${formData.lastName}`,
           customerEmail: formData.email,
           customerPhone: formData.phone,
+          drivingLicenseNumber: formData.drivingLicense,
           pickupLocation: tripDetails.pickupLocation,
           dropoffLocation: tripDetails.dropoffLocation,
           pickupDate: tripDetails.pickupDate,
@@ -303,6 +309,21 @@ export default function CheckoutPage() {
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     className="mt-2 border-zinc-700 bg-zinc-800 text-white placeholder:text-gray-500"
                     placeholder="+44 7700 900000"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="drivingLicense" className="text-gray-300">
+                    <IdCard className="mr-2 inline h-4 w-4" />
+                    Driving License Number *
+                  </Label>
+                  <Input
+                    id="drivingLicense"
+                    value={formData.drivingLicense}
+                    onChange={(e) => setFormData({ ...formData, drivingLicense: e.target.value })}
+                    className="mt-2 border-zinc-700 bg-zinc-800 text-white placeholder:text-gray-500"
+                    placeholder="Enter your driving license number"
                     required
                   />
                 </div>

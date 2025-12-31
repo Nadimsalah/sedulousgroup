@@ -17,7 +17,15 @@ export async function createInspectionAction(data: {
   overallCondition: "excellent" | "good" | "fair" | "poor"
   inspectedBy?: string
 }) {
-  console.log("[v0] createInspectionAction called")
+  console.log("[Inspections Action] createInspectionAction called with:", {
+    agreementId: data.agreementId,
+    bookingId: data.bookingId,
+    vehicleId: data.vehicleId,
+    inspectionType: data.inspectionType,
+    odometerReading: data.odometerReading,
+    exteriorPhotos: data.exteriorPhotos.length,
+    interiorPhotos: data.interiorPhotos.length,
+  })
 
   try {
     const inspection = await db.createVehicleInspection({
@@ -27,11 +35,17 @@ export async function createInspectionAction(data: {
       updatedAt: new Date().toISOString(),
     })
 
-    console.log("[v0] Inspection created:", inspection)
+    if (!inspection) {
+      console.error("[Inspections Action] Inspection creation returned null")
+      return { success: false, error: "Failed to create inspection: No data returned from database" }
+    }
+
+    console.log("[Inspections Action] Inspection created successfully:", inspection.id)
     return { success: true, inspection }
   } catch (error) {
-    console.error("[v0] createInspectionAction error:", error)
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
+    console.error("[Inspections Action] createInspectionAction error:", error)
+    const errorMessage = error instanceof Error ? error.message : "Unknown error"
+    return { success: false, error: errorMessage }
   }
 }
 

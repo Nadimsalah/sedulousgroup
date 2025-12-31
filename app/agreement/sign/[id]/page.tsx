@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
-import { FileText, Check, X, CheckCircle, Download } from "lucide-react"
+import { FileText, Check, Download, CheckCircle, Eye, Loader2 } from "lucide-react"
 import { getAgreementByIdAction, signAgreementAction } from "@/app/actions/agreements"
 import { getBookingsAction, getCarsAction } from "@/app/actions/database"
 import { toast } from "sonner"
@@ -28,6 +28,9 @@ export default function SignAgreementPage() {
   const [isSigning, setIsSigning] = useState(false)
   const [customerName, setCustomerName] = useState("")
   const [termsAccepted, setTermsAccepted] = useState(false)
+  const [hasSignature, setHasSignature] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
 
   useEffect(() => {
     if (agreementId) {
@@ -38,37 +41,125 @@ export default function SignAgreementPage() {
   const loadAgreement = async () => {
     if (!agreementId) return
     setIsLoading(true)
-    const agreementData = await getAgreementByIdAction(agreementId)
+    try {
+      const agreementData = await getAgreementByIdAction(agreementId)
 
-    if (!agreementData) {
-      toast.error("Agreement not found")
-      return
+      if (!agreementData) {
+        toast.error("Agreement not found")
+        router.push("/dashboard")
+        return
+      }
+
+      if (agreementData.status === "signed") {
+        toast.info("This agreement has already been signed")
+        // Redirect to success page if already signed
+        router.push(`/agreement/success/${agreementId}`)
+        return
+      }
+
+      setAgreement(agreementData)
+
+      const [bookingsData, carsData] = await Promise.all([getBookingsAction(), getCarsAction()])
+
+      const bookingData = bookingsData.find((b: any) => b.id === agreementData.bookingId)
+      const carData = carsData.find((c: any) => c.id === bookingData?.carId || c.id === bookingData?.car_id)
+
+      setBooking(bookingData)
+      setCar(carData)
+      setCustomerName(bookingData?.customerName || bookingData?.customer_name || "")
+      
+      // Load preview PDF if available
+      if (agreementData.unsignedAgreementUrl || agreementData.unsigned_agreement_url) {
+        setPreviewPdfUrl(agreementData.unsignedAgreementUrl || agreementData.unsigned_agreement_url)
+      }
+    } catch (error) {
+      console.error("[Sign Agreement] Error loading:", error)
+      toast.error("Failed to load agreement")
+    } finally {
+      setIsLoading(false)
     }
-
-    if (agreementData.status === "signed") {
-      toast.info("This agreement has already been signed")
-    }
-
-    setAgreement(agreementData)
-
-    const [bookingsData, carsData] = await Promise.all([getBookingsAction(), getCarsAction()])
-
-    const bookingData = bookingsData.find((b: any) => b.id === agreementData.bookingId)
-    const carData = carsData.find((c: any) => c.id === bookingData?.carId)
-
-    setBooking(bookingData)
-    setCar(carData)
-    setCustomerName(bookingData?.customerName || "")
-    setIsLoading(false)
   }
 
   const handleClearSignature = () => {
     signatureRef.current?.clear()
+    setHasSignature(false)
+  }
+
+  // Check signature status periodically
+  useEffect(() => {
+    const checkSignature = () => {
+      if (signatureRef.current) {
+        const isEmpty = signatureRef.current.isEmpty()
+        setHasSignature(!isEmpty)
+      }
+    }
+
+    const interval = setInterval(checkSignature, 500)
+    return () => clearInterval(interval)
+  }, [])
+
+  const handlePreview = async () => {
+    if (!agreement || !booking || !car) return
+    
+    try {
+      toast.info("Generating preview...")
+      
+      // Get company settings
+      const { getCompanySettings } = await import("@/app/actions/company-settings")
+      const companySettings = await getCompanySettings()
+      
+      // Prepare PDF data without signature
+      const pdfData: AgreementData = {
+        company_name: companySettings?.company_name || "Sedulous Group LTD",
+        company_address: companySettings?.company_address || "200 Burnt Oak Broadway, Edgware, HA8 0AP, United Kingdom",
+        company_phone: companySettings?.company_phone || "020 8952 6908",
+        company_email: companySettings?.company_email || "info@sedulousgroupltd.co.uk",
+        customer_name: booking?.customerName || booking?.customer_name || customerName,
+        customer_email: booking?.customerEmail || booking?.customer_email || "",
+        customer_phone: booking?.customerPhone || booking?.customer_phone || "",
+        customer_license: booking?.drivingLicenseNumber || booking?.driving_license_number || "N/A",
+        customer_address: booking?.customerAddress || booking?.customer_address || "",
+        vehicle: `${car?.brand || ""} ${car?.name || ""}`.trim(),
+        registration: car?.registration || "",
+        odometer: agreement?.odometerReading?.toString() || "0",
+        fuel: agreement?.fuelLevel || "Full",
+        pickup_date: new Date(booking?.pickupDate || booking?.pickup_date).toLocaleDateString("en-GB"),
+        pickup_time: booking?.pickupTime || booking?.pickup_time || "",
+        dropoff_date: new Date(booking?.dropoffDate || booking?.dropoff_date).toLocaleDateString("en-GB"),
+        dropoff_time: booking?.dropoffTime || booking?.dropoff_time || "",
+        pickup_location: booking?.pickupLocation || booking?.pickup_location || "",
+        dropoff_location: booking?.dropoffLocation || booking?.dropoff_location || "",
+        insurance_text: "I DECLARE THAT I have not had a proposal declined, a policy cancelled, nor renewal refused nor been required to pay an increased premium nor had special conditions imposed by any motor insurer. I have not been convicted of any motoring offense (other than a maximum of 2 speeding offenses) during the past 5 years nor had my license suspended during the past 10 years and there is no prosecution pending. I do not have any physical nor mental defect nor infirmity nor suffer from diabetes, fits nor any heart complaint. I have not had any accidents and/or claims exceeding £3000 in the past 36 calendar months, and I further declare that to the best of my knowledge and belief no information has been withheld which would influence the provision of motor insurance to me and this declaration shall form the basis of the contract of insurance.",
+        terms: [
+          "1. When you sign the form you accept the conditions set out in this rental agreement.",
+          "2. You will have the vehicle for the rental period shown in the agreement.",
+          "3. You must look after the vehicle and the keys.",
+          "4. The vehicle must only be driven by named drivers.",
+          "5. You will pay all charges, damages, fines, and administration costs.",
+          "6. In the event of an accident, do not admit liability and inform us immediately.",
+          "7. This agreement is governed by the laws of the country in which it is signed.",
+        ],
+        agreement_number: agreement.agreementNumber,
+        created_date: new Date(agreement.createdAt).toLocaleDateString("en-GB"),
+      }
+      
+      const logoPath = companySettings?.logo_url || "/sed.jpg"
+      const pdfDoc = await generateRentalAgreementPDF(pdfData, logoPath)
+      const pdfBlob = pdfDoc.output("blob")
+      const pdfUrl = URL.createObjectURL(pdfBlob)
+      
+      setPreviewPdfUrl(pdfUrl)
+      setShowPreview(true)
+      toast.success("Preview generated")
+    } catch (error) {
+      console.error("[Sign Agreement] Error generating preview:", error)
+      toast.error("Failed to generate preview")
+    }
   }
 
   const handleSubmit = async () => {
     if (!signatureRef.current || signatureRef.current.isEmpty()) {
-      toast.error("Please provide your signature")
+      toast.error("Please draw your signature")
       return
     }
 
@@ -85,10 +176,16 @@ export default function SignAgreementPage() {
     setIsSigning(true)
 
     try {
-      // Convert signature to base64
+      // Get signature as base64
       const signatureDataUrl = signatureRef.current.toDataURL()
+      
+      if (!signatureDataUrl || signatureDataUrl.length < 100) {
+        toast.error("Signature is invalid. Please draw your signature again.")
+        setIsSigning(false)
+        return
+      }
 
-      // Upload signature to blob storage
+      // Upload signature to storage
       const formData = new FormData()
       const blob = await fetch(signatureDataUrl).then((r) => r.blob())
       formData.append("file", blob, `signature-${agreementId}.png`)
@@ -104,8 +201,8 @@ export default function SignAgreementPage() {
 
       const { url: signatureUrl } = await uploadResponse.json()
 
-      // Step 1: Save signature to agreement first (with authorization check)
-      const result = await signAgreementAction(agreementId, signatureUrl, customerName)
+      // Save signature to agreement (pass both URL and base64 for server-side PDF generation)
+      const result = await signAgreementAction(agreementId, signatureUrl, customerName, signatureDataUrl)
 
       if (!result.success) {
         toast.error(result.error || "Failed to sign agreement")
@@ -113,50 +210,105 @@ export default function SignAgreementPage() {
         return
       }
 
-      // Step 2: Generate PDF with both signatures (server-side)
-      try {
-        toast.info("Generating signed PDF with your signature...")
-        
-        const { generateSignedPdfAction } = await import("@/app/actions/generate-signed-pdf")
-        const pdfResult = await generateSignedPdfAction(agreementId)
-
-        if (!pdfResult.success) {
-          throw new Error(pdfResult.error || "Failed to generate signed PDF")
-        }
-
-        toast.success("Agreement signed successfully! PDF generated with your signature.")
-        
-        // Refresh agreement to get updated signed_agreement_url
-        await loadAgreement()
-        
-        setTimeout(() => {
-          router.push("/dashboard")
-        }, 2000)
-      } catch (pdfError: any) {
-        console.error("[v0] Error generating signed PDF:", pdfError)
-        // Signature was saved, but PDF generation failed
-        toast.warning("Agreement signed, but PDF generation had an issue. Your signature was saved.")
-        await loadAgreement() // Refresh to show signed status
-        setTimeout(() => {
-          router.push("/dashboard")
-        }, 2000)
-      } finally {
-        setIsSigning(false)
+      // Generate PDF with signature immediately
+      toast.info("Generating signed PDF...")
+      
+      const { getCompanySettings } = await import("@/app/actions/company-settings")
+      const companySettings = await getCompanySettings()
+      
+      const pdfData: AgreementData = {
+        company_name: companySettings?.company_name || "Sedulous Group LTD",
+        company_address: companySettings?.company_address || "200 Burnt Oak Broadway, Edgware, HA8 0AP, United Kingdom",
+        company_phone: companySettings?.company_phone || "020 8952 6908",
+        company_email: companySettings?.company_email || "info@sedulousgroupltd.co.uk",
+        customer_name: booking?.customerName || booking?.customer_name || customerName,
+        customer_email: booking?.customerEmail || booking?.customer_email || "",
+        customer_phone: booking?.customerPhone || booking?.customer_phone || "",
+        customer_license: booking?.drivingLicenseNumber || booking?.driving_license_number || "N/A",
+        customer_address: booking?.customerAddress || booking?.customer_address || "",
+        vehicle: `${car?.brand || ""} ${car?.name || ""}`.trim(),
+        registration: car?.registration || "",
+        odometer: agreement?.odometerReading?.toString() || "0",
+        fuel: agreement?.fuelLevel || "Full",
+        pickup_date: new Date(booking?.pickupDate || booking?.pickup_date).toLocaleDateString("en-GB"),
+        pickup_time: booking?.pickupTime || booking?.pickup_time || "",
+        dropoff_date: new Date(booking?.dropoffDate || booking?.dropoff_date).toLocaleDateString("en-GB"),
+        dropoff_time: booking?.dropoffTime || booking?.dropoff_time || "",
+        pickup_location: booking?.pickupLocation || booking?.pickup_location || "",
+        dropoff_location: booking?.dropoffLocation || booking?.dropoff_location || "",
+        insurance_text: "I DECLARE THAT I have not had a proposal declined, a policy cancelled, nor renewal refused nor been required to pay an increased premium nor had special conditions imposed by any motor insurer. I have not been convicted of any motoring offense (other than a maximum of 2 speeding offenses) during the past 5 years nor had my license suspended during the past 10 years and there is no prosecution pending. I do not have any physical nor mental defect nor infirmity nor suffer from diabetes, fits nor any heart complaint. I have not had any accidents and/or claims exceeding £3000 in the past 36 calendar months, and I further declare that to the best of my knowledge and belief no information has been withheld which would influence the provision of motor insurance to me and this declaration shall form the basis of the contract of insurance.",
+        terms: [
+          "1. When you sign the form you accept the conditions set out in this rental agreement.",
+          "2. You will have the vehicle for the rental period shown in the agreement.",
+          "3. You must look after the vehicle and the keys.",
+          "4. The vehicle must only be driven by named drivers.",
+          "5. You will pay all charges, damages, fines, and administration costs.",
+          "6. In the event of an accident, do not admit liability and inform us immediately.",
+          "7. This agreement is governed by the laws of the country in which it is signed.",
+        ],
+        agreement_number: agreement.agreementNumber,
+        created_date: new Date(agreement.createdAt).toLocaleDateString("en-GB"),
+        customer_signature: signatureDataUrl,
+        customer_name_signed: customerName,
       }
+      
+      const logoPath = companySettings?.logo_url || "/sed.jpg"
+      const pdfDoc = await generateRentalAgreementPDF(pdfData, logoPath)
+      const pdfBlob = pdfDoc.output("blob")
+      
+      // Trigger instant download
+      const downloadUrl = URL.createObjectURL(pdfBlob)
+      const link = document.createElement("a")
+      link.href = downloadUrl
+      link.download = `signed-agreement-${agreement.agreementNumber}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(downloadUrl)
+      
+      // Upload PDF to server in background
+      const uploadFormData = new FormData()
+      uploadFormData.append("file", pdfBlob, `signed-agreement-${agreementId}-${Date.now()}.pdf`)
+      
+      fetch("/api/upload", {
+        method: "POST",
+        body: uploadFormData,
+      })
+        .then(async (res) => {
+          if (res.ok) {
+            const result = await res.json()
+            // Update agreement with PDF URL
+            await fetch(`/api/agreements/${agreementId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                signed_agreement_url: result.url,
+                status: "signed",
+              }),
+            })
+          }
+        })
+        .catch((err) => console.error("[Sign Agreement] Error uploading PDF:", err))
+      
+      toast.success("Agreement signed! PDF downloaded.")
+      
+      // Wait a moment then redirect
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      router.push(`/agreement/success/${agreementId}`)
+      
     } catch (error) {
-      console.error("[v0] Error signing agreement:", error)
+      console.error("[Sign Agreement] Error:", error)
       toast.error("An error occurred while signing")
+      setIsSigning(false)
     }
-
-    setIsSigning(false)
   }
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-red-500 border-r-transparent"></div>
-          <p className="mt-4 text-white/70">Loading agreement...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-red-500 mx-auto mb-4" />
+          <p className="text-white/70">Loading agreement...</p>
         </div>
       </div>
     )
@@ -164,70 +316,77 @@ export default function SignAgreementPage() {
 
   if (!agreement || !booking || !car) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="bg-black/80 backdrop-blur-xl border border-white/10 rounded-xl p-8 text-center max-w-md">
-          <X className="h-12 w-12 text-red-500 mx-auto mb-4" />
+      <div className="min-h-screen bg-black flex items-center justify-center p-4">
+        <Card className="bg-black/80 backdrop-blur-xl border border-white/10 rounded-xl p-8 text-center max-w-md">
+          <Check className="h-12 w-12 text-red-500 mx-auto mb-4" />
           <h2 className="text-xl font-semibold mb-2 text-white">Agreement Not Found</h2>
-          <p className="text-white/70">The agreement you're looking for doesn't exist or has been removed.</p>
-        </div>
+          <p className="text-white/70 mb-4">The agreement you're looking for doesn't exist or has been removed.</p>
+          <Button onClick={() => router.push("/dashboard")} variant="outline" className="border-white/20 text-white">
+            Go to Dashboard
+          </Button>
+        </Card>
       </div>
     )
   }
 
-  const alreadySigned = agreement.status === "signed"
-
   return (
-    <div className="min-h-screen bg-black py-8 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-black via-zinc-900 to-black py-8 px-4">
       <div className="max-w-4xl mx-auto">
-        <div className="bg-black/80 backdrop-blur-xl border border-white/10 rounded-xl shadow-lg p-6 mb-6">
-          <div className="flex items-center justify-center mb-6">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center mb-4">
             <Image src="/images/dna-group-logo.png" alt="Sedulous Group" width={150} height={50} />
           </div>
+          <h1 className="text-3xl font-bold text-white mb-2">Rental Agreement</h1>
+          <p className="text-white/70">{agreement.agreementNumber}</p>
+        </div>
 
-          <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-white mb-2">Rental Agreement</h1>
-            <p className="text-white/70">{agreement.agreementNumber}</p>
+        {/* Preview Button */}
+        {previewPdfUrl && (
+          <div className="mb-6 flex justify-center">
+            <Button
+              onClick={handlePreview}
+              variant="outline"
+              className="border-white/20 text-white hover:bg-white/10"
+            >
+              <Eye className="h-4 w-4 mr-2" />
+              Preview Agreement PDF
+            </Button>
           </div>
+        )}
 
-          {alreadySigned && (
-            <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-6 mb-6">
-              <div className="flex items-start gap-4">
-                <CheckCircle className="h-8 w-8 text-green-400 flex-shrink-0 mt-1" />
-                <div className="flex-1">
-                  <h3 className="text-xl font-semibold text-white mb-2">Agreement Signed Successfully!</h3>
-                  <p className="text-green-400 text-sm mb-4">
-                    Your contract has been signed and the PDF with your signature has been generated.
-                  </p>
-                  {agreement.signed_at && (
-                    <p className="text-white/60 text-sm mb-4">
-                      Signed on: {new Date(agreement.signed_at).toLocaleDateString("en-GB", {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </p>
-                  )}
-                  {(agreement.signed_agreement_url || (agreement as any).signedAgreementUrl) && (
-                    <a
-                      href={agreement.signed_agreement_url || (agreement as any).signedAgreementUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
-                    >
-                      <Download className="h-5 w-5" />
-                      Download Signed Agreement PDF
-                    </a>
-                  )}
-                </div>
+        {/* Preview Modal */}
+        {showPreview && previewPdfUrl && (
+          <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
+            <div className="bg-black border border-white/10 rounded-xl p-6 max-w-4xl w-full max-h-[90vh] overflow-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-white">Agreement Preview</h2>
+                <Button
+                  onClick={() => setShowPreview(false)}
+                  variant="ghost"
+                  className="text-white hover:bg-white/10"
+                >
+                  Close
+                </Button>
               </div>
+              <iframe
+                src={previewPdfUrl}
+                className="w-full h-[80vh] border border-white/10 rounded-lg"
+                title="Agreement Preview"
+              />
             </div>
-          )}
+          </div>
+        )}
 
+        {/* Main Content */}
+        <Card className="bg-black/80 backdrop-blur-xl border border-white/10 rounded-xl shadow-lg p-6 md:p-8 mb-6">
+          {/* Booking Summary */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div className="bg-white/5 border border-white/10 rounded-lg p-4">
-              <h3 className="font-semibold text-white mb-3">Vehicle Details</h3>
+              <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Vehicle Details
+              </h3>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-white/70">Vehicle:</span>
@@ -239,132 +398,137 @@ export default function SignAgreementPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-white/70">Type:</span>
-                  <span className="font-medium text-white">{booking.bookingType}</span>
+                  <span className="font-medium text-white">{booking.bookingType || "Rent"}</span>
                 </div>
               </div>
             </div>
 
             <div className="bg-white/5 border border-white/10 rounded-lg p-4">
-              <h3 className="font-semibold text-white mb-3">Rental Period</h3>
+              <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
+                <CheckCircle className="h-5 w-5" />
+                Rental Period
+              </h3>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-white/70">Pick-up:</span>
-                  <span className="font-medium text-white">{new Date(booking.pickupDate).toLocaleDateString()}</span>
+                  <span className="font-medium text-white">
+                    {new Date(booking.pickupDate || booking.pickup_date).toLocaleDateString("en-GB")}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-white/70">Drop-off:</span>
-                  <span className="font-medium text-white">{new Date(booking.dropoffDate).toLocaleDateString()}</span>
+                  <span className="font-medium text-white">
+                    {new Date(booking.dropoffDate || booking.dropoff_date).toLocaleDateString("en-GB")}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-white/70">Total:</span>
-                  <span className="font-medium text-red-500">£{booking.totalAmount.toFixed(2)}</span>
+                  <span className="font-medium text-red-500">£{booking.totalAmount?.toFixed(2) || "0.00"}</span>
                 </div>
               </div>
             </div>
           </div>
 
+          {/* Terms and Conditions */}
           <div className="bg-white/5 border border-white/10 rounded-lg p-6 mb-6">
             <h3 className="font-semibold text-white mb-4">Terms and Conditions</h3>
-            <div className="max-h-96 overflow-y-auto pr-4 space-y-4 text-white/90">
-              <p className="text-base leading-relaxed">By signing this agreement, you confirm that:</p>
-              <ul className="list-disc pl-6 space-y-3 text-sm leading-relaxed">
+            <div className="max-h-64 overflow-y-auto pr-4 space-y-3 text-white/90 text-sm">
+              <p className="text-base leading-relaxed font-medium">By signing this agreement, you confirm that:</p>
+              <ul className="list-disc pl-6 space-y-2 leading-relaxed">
                 <li>You are at least 21 years old and hold a valid driving license</li>
                 <li>All information provided is accurate and complete</li>
                 <li>You will use the vehicle in accordance with UK road traffic laws</li>
                 <li>You will return the vehicle in the same condition as received</li>
                 <li>You accept responsibility for any damage, fines, or penalties incurred during the rental period</li>
                 <li>You have read and agree to the full terms and conditions of this rental agreement</li>
-                <li>Payment of £{booking.totalAmount.toFixed(2)} is due as per the agreed payment schedule</li>
+                <li>Payment of £{booking.totalAmount?.toFixed(2) || "0.00"} is due as per the agreed payment schedule</li>
                 <li>The vehicle must be returned with the same fuel level as at pickup, or refueling charges will apply</li>
                 <li>Any damage to the vehicle will be charged at market rates for repairs</li>
                 <li>Traffic violations, parking fines, and congestion charges are the responsibility of the renter</li>
-                <li>The vehicle must not be used for commercial purposes, racing, or any illegal activities</li>
-                <li>Smoking is strictly prohibited inside the vehicle</li>
-                <li>Pets are only allowed with prior written consent and may incur additional charges</li>
-                <li>The renter is responsible for all tolls, parking fees, and other charges during the rental period</li>
-                <li>In case of accident or breakdown, the renter must contact the rental company immediately</li>
-                <li>The deposit may be held for up to 30 days after vehicle return to cover any potential charges</li>
-                <li>Late returns will incur additional charges at the daily rate</li>
-                <li>The rental company reserves the right to charge the renter's card for any damages or violations</li>
-                <li>All disputes will be resolved in accordance with UK law</li>
               </ul>
-              <div className="mt-4 pt-4 border-t border-white/10">
-                <p className="text-sm text-white/80 italic">
-                  By proceeding with the signature, you acknowledge that you have read, understood, and agree to all terms and conditions listed above.
-                </p>
-              </div>
             </div>
           </div>
 
-          {!alreadySigned && (
-            <div className="space-y-6">
-              <div>
-                <Label htmlFor="name" className="text-base font-semibold mb-2 text-white">
-                  Full Name
-                </Label>
-                <Input
-                  id="name"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Enter your full name"
-                  className="mt-1 bg-white/10 border-white/20 text-white placeholder:text-white/50 focus:border-red-500"
-                />
-              </div>
-
-              <div>
-                <Label className="text-base font-semibold mb-3 block text-white">Digital Signature</Label>
-                <div className="border-2 border-white/20 rounded-lg overflow-hidden bg-white">
-                  <SignatureCanvas
-                    ref={signatureRef}
-                    canvasProps={{
-                      className: "w-full h-48 bg-white cursor-crosshair",
-                    }}
-                  />
-                </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={handleClearSignature} 
-                  className="mt-2 bg-white/10 border-white/20 text-white hover:bg-white/20"
-                >
-                  Clear Signature
-                </Button>
-              </div>
-
-              <div className="flex items-start gap-3 bg-white/5 border border-white/10 rounded-lg p-4">
-                <Checkbox
-                  id="terms"
-                  checked={termsAccepted}
-                  onCheckedChange={(checked) => setTermsAccepted(checked as boolean)}
-                  className="mt-1"
-                />
-                <Label htmlFor="terms" className="text-sm text-white/90 leading-relaxed cursor-pointer flex-1">
-                  I have read, understood, and agree to all the terms and conditions of this rental agreement. I confirm
-                  that all information provided is accurate and I accept full responsibility for the vehicle during the
-                  rental period. I understand that by signing this agreement, I am legally bound to these terms.
-                </Label>
-              </div>
-
-              <Button
-                onClick={handleSubmit}
-                disabled={isSigning}
-                className="w-full bg-red-500 hover:bg-red-600 text-white h-12 text-base font-semibold"
-              >
-                {isSigning ? (
-                  <>
-                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent mr-2" />
-                    Signing Agreement...
-                  </>
-                ) : (
-                  <>
-                    <FileText className="h-5 w-5 mr-2" />
-                    Sign Agreement
-                  </>
-                )}
-              </Button>
+          {/* Signature Section */}
+          <div className="space-y-6">
+            <div>
+              <Label htmlFor="name" className="text-base font-semibold mb-2 text-white block">
+                Full Name *
+              </Label>
+              <Input
+                id="name"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Enter your full name"
+                className="bg-white/10 border-white/20 text-white placeholder:text-white/50 focus:border-red-500"
+              />
             </div>
-          )}
-        </div>
+
+            <div className="space-y-3">
+              <Label className="text-base font-semibold mb-3 block text-white">Digital Signature *</Label>
+              <p className="text-sm text-white/70 mb-2">Please draw your signature in the box below:</p>
+              <div className="border-2 border-white/20 rounded-lg bg-white p-2">
+                <SignatureCanvas
+                  ref={signatureRef}
+                  canvasProps={{
+                    width: 500,
+                    height: 150,
+                    className: "border border-gray-300 rounded w-full",
+                  }}
+                  backgroundColor="#ffffff"
+                  penColor="#000000"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleClearSignature}
+                  variant="outline"
+                  className="flex-1 bg-white/10 border-white/20 text-white hover:bg-white/20"
+                >
+                  Clear
+                </Button>
+                {hasSignature && (
+                  <div className="flex-1 flex items-center justify-center gap-2 bg-green-900/20 border border-green-800 rounded-lg text-green-400 text-sm px-4">
+                    <CheckCircle className="h-4 w-4" />
+                    Signature captured
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3 bg-white/5 border border-white/10 rounded-lg p-4">
+              <Checkbox
+                id="terms"
+                checked={termsAccepted}
+                onCheckedChange={(checked) => setTermsAccepted(checked as boolean)}
+                className="mt-1"
+              />
+              <Label htmlFor="terms" className="text-sm text-white/90 leading-relaxed cursor-pointer flex-1">
+                I have read, understood, and agree to all the terms and conditions of this rental agreement. I confirm
+                that all information provided is accurate and I accept full responsibility for the vehicle during the
+                rental period. I understand that by signing this agreement, I am legally bound to these terms.
+              </Label>
+            </div>
+
+            <Button
+              onClick={handleSubmit}
+              disabled={isSigning || !hasSignature || !customerName.trim() || !termsAccepted}
+              className="w-full bg-red-500 hover:bg-red-600 text-white h-12 text-base font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSigning ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                  Signing Agreement...
+                </>
+              ) : (
+                <>
+                  <FileText className="h-5 w-5 mr-2" />
+                  Sign Agreement
+                </>
+              )}
+            </Button>
+          </div>
+        </Card>
 
         <div className="text-center text-sm text-white/50">
           <p>&copy; {new Date().getFullYear()} Sedulous Group Ltd. All rights reserved.</p>

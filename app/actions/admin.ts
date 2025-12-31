@@ -47,6 +47,104 @@ export async function getAdminStats() {
       }).length || 0
     const totalCustomers = profiles?.length || 0
 
+    // Calculate profit statistics
+    const now = new Date()
+    
+    // Today: start of today (00:00:00) to end of today (23:59:59)
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+    
+    // Yesterday: start of yesterday to end of yesterday
+    const yesterdayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0, 0)
+    const yesterdayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59, 999)
+    
+    // This week: start of week (Sunday) to now
+    const weekStart = new Date(now)
+    weekStart.setDate(now.getDate() - now.getDay())
+    weekStart.setHours(0, 0, 0, 0)
+    
+    // This month: start of current month to now
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
+
+    // Helper function to check if booking is completed/paid
+    const isPaidBooking = (booking: any) => {
+      const status = (booking.status || "").toLowerCase()
+      return ["completed", "active", "approved", "confirmed", "on rent"].includes(status) ||
+             booking.stripe_payment_intent_id ||
+             booking.stripe_session_id
+    }
+
+    // Helper function to get booking amount
+    const getBookingAmount = (booking: any) => {
+      return parseFloat(booking.total_amount) || 0
+    }
+
+    // Helper function to check if date is in range (inclusive)
+    const isDateInRange = (date: Date | string, start: Date, end: Date) => {
+      const bookingDate = new Date(date)
+      return bookingDate >= start && bookingDate <= end
+    }
+
+    // Helper function to check if date is on or after start
+    const isDateOnOrAfter = (date: Date | string, start: Date) => {
+      const bookingDate = new Date(date)
+      return bookingDate >= start
+    }
+
+    // Calculate profits
+    const allProfit = (bookings || [])
+      .filter(isPaidBooking)
+      .reduce((sum, b) => sum + getBookingAmount(b), 0)
+
+    const todayProfit = (bookings || [])
+      .filter((b) => {
+        if (!isPaidBooking(b)) return false
+        // Check both created_at and updated_at to catch bookings updated today
+        const createdDate = b.created_at ? new Date(b.created_at) : null
+        const updatedDate = b.updated_at ? new Date(b.updated_at) : null
+        
+        if (createdDate && isDateInRange(createdDate, todayStart, todayEnd)) return true
+        if (updatedDate && isDateInRange(updatedDate, todayStart, todayEnd)) return true
+        return false
+      })
+      .reduce((sum, b) => sum + getBookingAmount(b), 0)
+
+    const yesterdayProfit = (bookings || [])
+      .filter((b) => {
+        if (!isPaidBooking(b)) return false
+        const createdDate = b.created_at ? new Date(b.created_at) : null
+        const updatedDate = b.updated_at ? new Date(b.updated_at) : null
+        
+        if (createdDate && isDateInRange(createdDate, yesterdayStart, yesterdayEnd)) return true
+        if (updatedDate && isDateInRange(updatedDate, yesterdayStart, yesterdayEnd)) return true
+        return false
+      })
+      .reduce((sum, b) => sum + getBookingAmount(b), 0)
+
+    const weekProfit = (bookings || [])
+      .filter((b) => {
+        if (!isPaidBooking(b)) return false
+        const createdDate = b.created_at ? new Date(b.created_at) : null
+        const updatedDate = b.updated_at ? new Date(b.updated_at) : null
+        
+        if (createdDate && isDateOnOrAfter(createdDate, weekStart)) return true
+        if (updatedDate && isDateOnOrAfter(updatedDate, weekStart)) return true
+        return false
+      })
+      .reduce((sum, b) => sum + getBookingAmount(b), 0)
+
+    const monthProfit = (bookings || [])
+      .filter((b) => {
+        if (!isPaidBooking(b)) return false
+        const createdDate = b.created_at ? new Date(b.created_at) : null
+        const updatedDate = b.updated_at ? new Date(b.updated_at) : null
+        
+        if (createdDate && isDateOnOrAfter(createdDate, monthStart)) return true
+        if (updatedDate && isDateOnOrAfter(updatedDate, monthStart)) return true
+        return false
+      })
+      .reduce((sum, b) => sum + getBookingAmount(b), 0)
+
     console.log(
       "[v0] Admin stats loaded - Total: ",
       totalBookings,
@@ -56,6 +154,14 @@ export async function getAdminStats() {
       activeBookings,
       "Customers:",
       totalCustomers,
+      "All Profit:",
+      allProfit,
+      "Today Profit:",
+      todayProfit,
+      "Today Range:",
+      todayStart.toISOString(),
+      "to",
+      todayEnd.toISOString(),
     )
 
     return {
@@ -67,6 +173,13 @@ export async function getAdminStats() {
         pendingBookings,
         activeBookings,
         totalCustomers,
+        profit: {
+          all: allProfit,
+          today: todayProfit,
+          yesterday: yesterdayProfit,
+          week: weekProfit,
+          month: monthProfit,
+        },
       },
     }
   } catch (error) {
@@ -80,6 +193,13 @@ export async function getAdminStats() {
         pendingBookings: 0,
         activeBookings: 0,
         totalCustomers: 0,
+        profit: {
+          all: 0,
+          today: 0,
+          yesterday: 0,
+          week: 0,
+          month: 0,
+        },
       },
     }
   }

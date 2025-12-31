@@ -35,13 +35,21 @@ export async function createPCNTicketAction(data: {
 }
 
 export async function getPCNsByAgreementAction(agreementId: string) {
-  console.log("[v0] getPCNsByAgreementAction called for agreement:", agreementId)
+  console.log("[PCN Tickets Action] getPCNsByAgreementAction called for agreement:", agreementId)
 
   try {
+    if (!agreementId) {
+      console.warn("[PCN Tickets Action] No agreement ID provided")
+      return []
+    }
+
     const tickets = await db.getPCNsByAgreementId(agreementId)
+    console.log(`[PCN Tickets Action] Found ${tickets?.length || 0} tickets for agreement ${agreementId}`)
     return tickets || []
   } catch (error) {
-    console.error("[v0] getPCNsByAgreementAction error:", error)
+    console.error("[PCN Tickets Action] getPCNsByAgreementAction error:", error)
+    const errorMessage = error instanceof Error ? error.message : "Unknown error"
+    console.error("[PCN Tickets Action] Error details:", errorMessage)
     return []
   }
 }

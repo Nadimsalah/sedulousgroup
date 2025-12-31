@@ -1,29 +1,154 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Save, ArrowLeft, Upload } from "lucide-react"
+import { Save, ArrowLeft, Upload, Loader2 } from "lucide-react"
 import Link from "next/link"
+import { toast } from "sonner"
+import { getCompanySettings, updateCompanySettings } from "@/app/actions/company-settings"
 
 export default function CompanySettingsPage() {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  
   const [company, setCompany] = useState({
-    name: "Sedulous Group Ltd",
-    email: "info@sedulousgroup.net",
-    phone: "+44 20 1234 5678",
-    address: "123 Business Street, London",
-    postcode: "SW1A 1AA",
-    vatNumber: "GB123456789",
-    companyNumber: "12345678",
-    description: "Premium car rental services in London",
-    logo: "/images/dna-group-logo.png",
+    name: "Sedulous Group LTD",
+    email: "info@sedulousgroupltd.co.uk",
+    phone: "020 8952 6908",
+    address: "200 Burnt Oak Broadway, Edgware, HA8 0AP, United Kingdom",
+    postcode: "",
+    vatNumber: "",
+    companyNumber: "",
+    description: "",
+    logo: "/sed.jpg",
   })
 
+  useEffect(() => {
+    loadSettings()
+  }, [])
+
+  const loadSettings = async () => {
+    setIsLoading(true)
+    try {
+      const settings = await getCompanySettings()
+      if (settings) {
+        setCompany({
+          name: settings.company_name || "Sedulous Group LTD",
+          email: settings.company_email || "info@sedulousgroupltd.co.uk",
+          phone: settings.company_phone || "020 8952 6908",
+          address: settings.company_address || "200 Burnt Oak Broadway, Edgware, HA8 0AP, United Kingdom",
+          postcode: "",
+          vatNumber: settings.vat_number || "",
+          companyNumber: "",
+          description: settings.description || "",
+          logo: settings.logo_url || "/sed.jpg",
+        })
+      }
+    } catch (error) {
+      console.error("Error loading company settings:", error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("File size must be less than 5MB")
+      return
+    }
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please upload an image file")
+      return
+    }
+
+    setIsUploadingLogo(true)
+
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      })
+
+      if (!response.ok) {
+        throw new Error("Upload failed")
+      }
+
+      const { url } = await response.json()
+      setCompany({ ...company, logo: url })
+      toast.success("Logo uploaded successfully")
+    } catch (error) {
+      console.error("Error uploading logo:", error)
+      toast.error("Failed to upload logo")
+    } finally {
+      setIsUploadingLogo(false)
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
+    }
+  }
+
+  const handleSave = async () => {
+    setIsSaving(true)
+
+    try {
+      const result = await updateCompanySettings({
+        company_name: company.name,
+        company_email: company.email,
+        company_phone: company.phone,
+        company_address: company.address,
+        logo_url: company.logo,
+        vat_number: company.vatNumber || undefined,
+        description: company.description || undefined,
+      })
+
+      if (result.success) {
+        toast.success("Company settings saved successfully")
+      } else {
+        const errorMsg = result.error || "Failed to save company settings"
+        toast.error(errorMsg, {
+          action: errorMsg.includes("table does not exist") ? {
+            label: "Setup Database",
+            onClick: () => window.location.href = "/admin/settings/setup"
+          } : undefined
+        })
+      }
+    } catch (error) {
+      console.error("Error saving company settings:", error)
+      toast.error("Failed to save company settings")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-black p-3 md:p-6 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-white mx-auto mb-4" />
+          <p className="text-white/60">Loading company settings...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="min-h-screen bg-black p-3 md:p-6 space-y-6">
       <div className="flex items-center gap-4">
         <Link href="/admin/settings">
           <Button variant="ghost" size="icon" className="text-white hover:bg-white/10">

@@ -63,7 +63,7 @@ export async function createAgreementAction(data: {
   }
 }
 
-export async function signAgreementAction(agreementId: string, signatureUrl: string, customerName: string) {
+export async function signAgreementAction(agreementId: string, signatureUrl: string, customerName: string, signatureBase64?: string) {
   console.log("[v0] signAgreementAction called for agreement:", agreementId)
 
   try {
@@ -101,12 +101,11 @@ export async function signAgreementAction(agreementId: string, signatureUrl: str
       return { success: false, error: "Access denied - You can only sign your own agreements" }
     }
 
-    // Save signature
-    const success = await db.updateAgreementSignature(agreementId, signatureUrl, customerName)
+    // Save signature (with base64 if provided)
+    const success = await db.updateAgreementSignature(agreementId, signatureUrl, customerName, signatureBase64)
 
     if (success) {
-      // Update agreement status to signed
-      await db.updateAgreementStatus(agreementId, "signed")
+      // Update agreement status will be set to "signed" when PDF is generated
       // Update booking status to On Rent
       if (agreement) {
         await db.updateBookingStatus(agreement.bookingId, "On Rent")

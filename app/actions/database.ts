@@ -449,6 +449,8 @@ export async function updateUserProfileAction(updates: {
   proofOfAddressUrl?: string
   niNumber?: string
   bankStatementUrl?: string
+  privateHireLicenseFrontUrl?: string
+  privateHireLicenseBackUrl?: string
 }) {
   try {
     const supabase = await createClient()

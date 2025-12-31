@@ -931,6 +931,10 @@ export default function AgreementStepsPage() {
                       <span className="text-zinc-400">Phone:</span> {booking.customer_phone}
                     </p>
                     <p>
+                      <span className="text-zinc-400">Driving License Number:</span>{" "}
+                      {booking.driving_license_number || booking.drivingLicenseNumber || "N/A"}
+                    </p>
+                    <p>
                       <span className="text-zinc-400">Vehicle:</span> {car.brand} {car.name}
                     </p>
                     <p>

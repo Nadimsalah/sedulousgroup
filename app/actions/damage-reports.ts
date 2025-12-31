@@ -1,6 +1,8 @@
 "use server"
 
+import { createAdminClient } from "@/lib/supabase/server"
 import { createClient } from "@/lib/supabase/server"
+import { db } from "@/lib/database"
 import type { DamageReport } from "@/lib/database"
 
 export async function createDamageReport(data: {
@@ -21,50 +23,71 @@ export async function createDamageReport(data: {
   reportedBy?: string
 }) {
   try {
-    const supabase = await createClient()
+    console.log("[Damage Reports] Creating damage report with data:", {
+      vehicleId: data.vehicleId,
+      damageType: data.damageType,
+      severity: data.severity,
+      description: data.description?.substring(0, 50),
+      photosCount: data.damagePhotos?.length || 0,
+    })
 
-    const { data: report, error } = await supabase
-      .from("damage_reports")
-      .insert({
-        agreement_id: data.agreementId,
-        booking_id: data.bookingId,
-        vehicle_id: data.vehicleId,
-        customer_id: data.customerId,
-        damage_type: data.damageType,
-        severity: data.severity,
-        description: data.description,
-        location_on_vehicle: data.locationOnVehicle,
-        incident_date: data.incidentDate,
-        reported_date: new Date().toISOString(),
-        damage_photos: data.damagePhotos,
-        damage_videos: data.damageVideos,
-        estimated_cost: data.estimatedCost,
-        repair_status: "pending",
-        responsible_party: data.responsibleParty,
-        notes: data.notes,
-        reported_by: data.reportedBy,
-      })
-      .select()
-      .single()
+    // Use database method which uses admin client
+    const report = await db.createDamageReport({
+      agreementId: data.agreementId || undefined,
+      bookingId: data.bookingId || undefined,
+      vehicleId: data.vehicleId,
+      customerId: data.customerId || undefined,
+      damageType: data.damageType,
+      severity: data.severity,
+      description: data.description,
+      locationOnVehicle: data.locationOnVehicle || undefined,
+      incidentDate: data.incidentDate,
+      reportedDate: new Date().toISOString(),
+      damagePhotos: data.damagePhotos || [],
+      damageVideos: data.damageVideos || [],
+      estimatedCost: data.estimatedCost || undefined,
+      repairStatus: "pending",
+      responsibleParty: data.responsibleParty || undefined,
+      notes: data.notes || undefined,
+      reportedBy: data.reportedBy || undefined,
+    })
 
-    if (error) throw error
+    if (!report) {
+      console.error("[Damage Reports] Failed to create damage report - no data returned")
+      return { success: false, error: "Failed to create damage report: No data returned from database" }
+    }
+
+    console.log("[Damage Reports] Damage report created successfully:", report.id)
     return { success: true, report }
   } catch (error) {
-    console.error("[v0] Error creating damage report:", error)
-    return { success: false, error }
+    console.error("[Damage Reports] Error creating damage report:", error)
+    const errorMessage = error instanceof Error ? error.message : "Unknown error"
+    return { success: false, error: errorMessage }
   }
 }
 
 export async function getDamageReports(): Promise<DamageReport[]> {
   try {
-    const supabase = await createClient()
+    // Use admin client to bypass RLS and see all reports
+    const supabase = await createAdminClient()
+    if (!supabase) {
+      console.error("[Damage Reports] No admin client available")
+      return []
+    }
+
+    console.log("[Damage Reports] Fetching all damage reports...")
 
     const { data, error } = await supabase
       .from("damage_reports")
       .select("*")
       .order("reported_date", { ascending: false })
 
-    if (error) throw error
+    if (error) {
+      console.error("[Damage Reports] Error fetching damage reports:", error)
+      throw error
+    }
+
+    console.log(`[Damage Reports] Found ${data?.length || 0} damage reports`)
 
     return (data || []).map((report) => ({
       id: report.id,
@@ -93,7 +116,7 @@ export async function getDamageReports(): Promise<DamageReport[]> {
       reportedBy: report.reported_by,
     }))
   } catch (error) {
-    console.error("[v0] Error getting damage reports:", error)
+    console.error("[Damage Reports] Error getting damage reports:", error)
     return []
   }
 }
@@ -152,21 +175,36 @@ export async function updateDamageReportStatus(
   },
 ) {
   try {
-    const supabase = await createClient()
+    // Use admin client to bypass RLS
+    const supabase = await createAdminClient()
+    if (!supabase) {
+      console.error("[Damage Reports] No admin client available for updating status")
+      return { success: false, error: "No admin client available" }
+    }
+
+    console.log("[Damage Reports] Updating damage report:", reportId, updates)
 
     const updateData: any = {}
     if (updates.repairStatus) updateData.repair_status = updates.repairStatus
     if (updates.actualCost !== undefined) updateData.actual_cost = updates.actualCost
     if (updates.repairedBy) updateData.repaired_by = updates.repairedBy
     if (updates.insuranceClaimNumber) updateData.insurance_claim_number = updates.insuranceClaimNumber
-    if (updates.repairStatus === "completed") updateData.repaired_at = new Date().toISOString()
+    if (updates.repairStatus === "completed") {
+      updateData.repaired_at = new Date().toISOString()
+    }
 
     const { error } = await supabase.from("damage_reports").update(updateData).eq("id", reportId)
 
-    if (error) throw error
+    if (error) {
+      console.error("[Damage Reports] Error updating damage report:", error)
+      throw error
+    }
+
+    console.log("[Damage Reports] Damage report updated successfully")
     return { success: true }
   } catch (error) {
-    console.error("[v0] Error updating damage report:", error)
-    return { success: false, error }
+    console.error("[Damage Reports] Error updating damage report:", error)
+    const errorMessage = error instanceof Error ? error.message : "Unknown error"
+    return { success: false, error: errorMessage }
   }
 }

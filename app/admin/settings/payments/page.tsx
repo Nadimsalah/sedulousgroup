@@ -1,19 +1,23 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Save, ArrowLeft, CreditCard } from "lucide-react"
+import { Save, ArrowLeft, CreditCard, Loader2 } from "lucide-react"
 import Link from "next/link"
+import { toast } from "sonner"
+import { getPaymentSettings, updatePaymentSettings } from "@/app/actions/settings"
 
 export default function PaymentSettingsPage() {
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
   const [settings, setSettings] = useState({
-    stripeEnabled: true,
-    stripePublicKey: "pk_test_...",
-    stripeSecretKey: "sk_test_...",
+    stripeEnabled: false,
+    stripePublicKey: "",
+    stripeSecretKey: "",
     currency: "GBP",
     taxRate: "20",
     depositPercentage: "20",
@@ -21,8 +25,78 @@ export default function PaymentSettingsPage() {
     cancellationFee: "25",
   })
 
+  useEffect(() => {
+    loadSettings()
+  }, [])
+
+  const loadSettings = async () => {
+    setIsLoading(true)
+    try {
+      const data = await getPaymentSettings()
+      setSettings({
+        stripeEnabled: data.stripe_enabled || false,
+        stripePublicKey: data.stripe_public_key || "",
+        stripeSecretKey: data.stripe_secret_key || "",
+        currency: data.currency || "GBP",
+        taxRate: String(data.tax_rate || 20),
+        depositPercentage: String(data.deposit_percentage || 20),
+        lateFeePerDay: String(data.late_fee_per_day || 50),
+        cancellationFee: String(data.cancellation_fee || 25),
+      })
+    } catch (error) {
+      console.error("Error loading payment settings:", error)
+      toast.error("Failed to load payment settings")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSave = async () => {
+    setIsSaving(true)
+    try {
+      const result = await updatePaymentSettings({
+        stripe_enabled: settings.stripeEnabled,
+        stripe_public_key: settings.stripePublicKey || undefined,
+        stripe_secret_key: settings.stripeSecretKey || undefined,
+        currency: settings.currency,
+        tax_rate: Number.parseFloat(settings.taxRate) || 20,
+        deposit_percentage: Number.parseFloat(settings.depositPercentage) || 20,
+        late_fee_per_day: Number.parseFloat(settings.lateFeePerDay) || 50,
+        cancellation_fee: Number.parseFloat(settings.cancellationFee) || 25,
+      })
+
+      if (result.success) {
+        toast.success("Payment settings saved successfully")
+      } else {
+        const errorMsg = result.error || "Failed to save payment settings"
+        toast.error(errorMsg, {
+          action: errorMsg.includes("table does not exist") ? {
+            label: "Setup Database",
+            onClick: () => window.location.href = "/admin/settings/setup"
+          } : undefined
+        })
+      }
+    } catch (error) {
+      console.error("Error saving payment settings:", error)
+      toast.error("Failed to save payment settings")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-black p-3 md:p-6 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-white mx-auto mb-4" />
+          <p className="text-white/60">Loading payment settings...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="min-h-screen bg-black p-3 md:p-6 space-y-6">
       <div className="flex items-center gap-4">
         <Link href="/admin/settings">
           <Button variant="ghost" size="icon" className="text-white hover:bg-white/10">
@@ -153,9 +227,22 @@ export default function PaymentSettingsPage() {
           </div>
 
           <div className="flex justify-end pt-4">
-            <Button className="bg-red-500 hover:bg-red-600 text-white">
-              <Save className="h-4 w-4 mr-2" />
-              Save Changes
+            <Button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save Changes
+                </>
+              )}
             </Button>
           </div>
         </div>
