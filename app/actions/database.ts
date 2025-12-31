@@ -330,7 +330,7 @@ export async function createBookingWithStripeAction(booking: {
       dropoffTime: booking.dropoffTime,
       totalAmount: booking.totalAmount,
       status: "Payment Completed - Awaiting Details",
-      bookingType: booking.bookingType,
+      bookingType: booking.bookingType as "Rent" | "Flexi Hire" | "PCO Hire" | "Sales" | undefined,
       stripeSessionId: booking.stripeSessionId,
       stripePaymentIntentId: booking.stripePaymentIntentId,
       userId,
@@ -373,7 +373,18 @@ export async function getBookingByStripeSessionAction(sessionId: string) {
 export async function updateBookingAction(bookingId: string, updates: Partial<Booking>) {
   try {
     console.log("[v0] updateBookingAction called with:", { bookingId, updates })
-    const result = await db.updateBooking(bookingId, updates)
+    
+    // Filter out null values to match updateBooking's expected type
+    // updateBooking expects string | undefined, but Booking allows string | null | undefined
+    const filteredUpdates: any = {}
+    for (const [key, value] of Object.entries(updates)) {
+      // Skip null values (convert to undefined by not including them)
+      if (value !== null && value !== undefined) {
+        filteredUpdates[key] = value
+      }
+    }
+    
+    const result = await db.updateBooking(bookingId, filteredUpdates)
     console.log("[v0] updateBookingAction result:", result)
     return result
   } catch (error) {

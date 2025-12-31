@@ -27,7 +27,7 @@ export async function generateSignedPdfAction(agreementId: string) {
     // Get booking and car data
     const [bookings, cars] = await Promise.all([getBookingsAction(), getCarsAction()])
     const booking = bookings.find((b: any) => b.id === agreement.bookingId)
-    const car = cars.find((c: any) => c.id === booking?.carId || c.id === booking?.car_id)
+    const car = cars.find((c: any) => c.id === booking?.carId || c.id === (booking as any)?.car_id)
 
     if (!booking || !car) {
       return { success: false, error: "Booking or car data not found" }
@@ -183,7 +183,7 @@ export async function generateSignedPdfAction(agreementId: string) {
     const pdfDoc = await PDFDocument.load(unsignedPdfBytes)
     
     // Load customer signature image
-    let signatureImageBytes: ArrayBuffer
+    let signatureImageBytes: ArrayBuffer | undefined = undefined
     
     // Check if signature is base64
     if (customerSignatureData.startsWith('data:image')) {
@@ -205,7 +205,7 @@ export async function generateSignedPdfAction(agreementId: string) {
     } else {
       // It's a URL, fetch it
       console.log("[v0] Fetching signature image from URL:", customerSignatureData.substring(0, 100))
-      let signatureResponse: Response
+      let signatureResponse: Response | null = null
       
       try {
         // Check if it's a Supabase storage URL
