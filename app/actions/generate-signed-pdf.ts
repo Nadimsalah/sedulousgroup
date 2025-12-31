@@ -105,11 +105,21 @@ export async function generateSignedPdfAction(agreementId: string) {
     if (!customerSignatureData) {
       console.error("[v0] Customer signature not found.")
       console.error("[v0] - signed_agreement_url:", rawAgreement.signed_agreement_url?.substring(0, 100))
+<<<<<<< Current (Your changes)
       console.error("[v0] - customer_signature_data:", rawAgreement.customer_signature_data?.substring(0, 100))
       return { success: false, error: "Customer signature not found. Please sign the agreement again." }
     }
     
     console.log("[v0] Customer signature found, type:", customerSignatureData.startsWith('data:image') ? 'base64' : 'URL', "Preview:", customerSignatureData.substring(0, 100))
+=======
+      console.error("[v0] - customer_signature_data type:", typeof rawAgreement.customer_signature_data)
+      console.error("[v0] - customer_signature_data length:", rawAgreement.customer_signature_data?.length || 0)
+      console.error("[v0] - customer_signature_data preview:", rawAgreement.customer_signature_data?.substring(0, 200) || 'null/undefined')
+      return { success: false, error: "Customer signature not found. Please sign the agreement again." }
+    }
+    
+    console.log("[v0] Customer signature found, type:", customerSignatureData.startsWith('data:image') ? 'base64' : 'URL', "Length:", customerSignatureData.length, "Preview:", customerSignatureData.substring(0, 100))
+>>>>>>> Incoming (Background Agent changes)
     console.log("[v0] Unsigned PDF URL:", unsignedPdfUrl)
     
     // Load the existing PDF - handle both public URLs and signed URLs

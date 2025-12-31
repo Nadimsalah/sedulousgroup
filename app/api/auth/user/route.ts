@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
+<<<<<<< Current (Your changes)
+=======
+// Route segment config - force dynamic rendering (uses cookies)
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+export const fetchCache = 'force-no-store'
+export const revalidate = 0
+
+>>>>>>> Incoming (Background Agent changes)
 export async function GET() {
   try {
     const supabase = await createClient()

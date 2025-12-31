@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
-import { FileText, Check, Download, CheckCircle, Eye, Loader2 } from "lucide-react"
+import { FileText, Check, Download, CheckCircle, Eye, Loader2, X } from "lucide-react"
 import { getAgreementByIdAction, signAgreementAction } from "@/app/actions/agreements"
 import { getBookingsAction, getCarsAction } from "@/app/actions/database"
 import { toast } from "sonner"
@@ -28,7 +28,8 @@ export default function SignAgreementPage() {
   const [isSigning, setIsSigning] = useState(false)
   const [customerName, setCustomerName] = useState("")
   const [termsAccepted, setTermsAccepted] = useState(false)
-  const [hasSignature, setHasSignature] = useState(false)
+  const [signatureConfirmed, setSignatureConfirmed] = useState(false)
+  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null)
   const [showPreview, setShowPreview] = useState(false)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
 
@@ -52,7 +53,6 @@ export default function SignAgreementPage() {
 
       if (agreementData.status === "signed") {
         toast.info("This agreement has already been signed")
-        // Redirect to success page if already signed
         router.push(`/agreement/success/${agreementId}`)
         return
       }
@@ -81,22 +81,44 @@ export default function SignAgreementPage() {
   }
 
   const handleClearSignature = () => {
-    signatureRef.current?.clear()
-    setHasSignature(false)
+    if (signatureRef.current) {
+      signatureRef.current.clear()
+      setSignatureConfirmed(false)
+      setSignatureDataUrl(null)
+    }
   }
 
-  // Check signature status periodically
-  useEffect(() => {
-    const checkSignature = () => {
-      if (signatureRef.current) {
-        const isEmpty = signatureRef.current.isEmpty()
-        setHasSignature(!isEmpty)
-      }
+  const handleConfirmSignature = () => {
+    if (!signatureRef.current) {
+      toast.error("Signature canvas not initialized")
+      return
     }
 
-    const interval = setInterval(checkSignature, 500)
-    return () => clearInterval(interval)
-  }, [])
+    if (signatureRef.current.isEmpty()) {
+      toast.error("Please draw your signature first")
+      return
+    }
+
+    try {
+      // Use toDataURL() without parameters, same as admin
+      const dataUrl = signatureRef.current.toDataURL()
+      
+      if (!dataUrl || dataUrl.length < 100) {
+        toast.error("Invalid signature. Please try again.")
+        return
+      }
+
+      console.log("[Sign Agreement] Signature confirmed, data URL length:", dataUrl.length)
+      console.log("[Sign Agreement] Signature preview:", dataUrl.substring(0, 100))
+      
+      setSignatureDataUrl(dataUrl)
+      setSignatureConfirmed(true)
+      toast.success("Signature confirmed!")
+    } catch (error) {
+      console.error("[Sign Agreement] Error confirming signature:", error)
+      toast.error("Failed to capture signature. Please try again.")
+    }
+  }
 
   const handlePreview = async () => {
     if (!agreement || !booking || !car) return
@@ -104,11 +126,9 @@ export default function SignAgreementPage() {
     try {
       toast.info("Generating preview...")
       
-      // Get company settings
       const { getCompanySettings } = await import("@/app/actions/company-settings")
       const companySettings = await getCompanySettings()
       
-      // Prepare PDF data without signature
       const pdfData: AgreementData = {
         company_name: companySettings?.company_name || "Sedulous Group LTD",
         company_address: companySettings?.company_address || "200 Burnt Oak Broadway, Edgware, HA8 0AP, United Kingdom",
@@ -158,16 +178,19 @@ export default function SignAgreementPage() {
   }
 
   const handleSubmit = async () => {
-    if (!signatureRef.current || signatureRef.current.isEmpty()) {
-      toast.error("Please draw your signature")
+    // Validate signature
+    if (!signatureDataUrl || !signatureConfirmed) {
+      toast.error("Please confirm your signature first")
       return
     }
 
+    // Validate name
     if (!customerName.trim()) {
-      toast.error("Please enter your name")
+      toast.error("Please enter your full name")
       return
     }
 
+    // Validate terms
     if (!termsAccepted) {
       toast.error("Please accept the terms and conditions")
       return
@@ -176,39 +199,24 @@ export default function SignAgreementPage() {
     setIsSigning(true)
 
     try {
-      // Get signature as base64
-      const signatureDataUrl = signatureRef.current.toDataURL()
-      
-      if (!signatureDataUrl || signatureDataUrl.length < 100) {
-        toast.error("Signature is invalid. Please draw your signature again.")
-        setIsSigning(false)
-        return
-      }
+      console.log("[Sign Agreement] Starting signature process...")
+      console.log("[Sign Agreement] Signature data URL length:", signatureDataUrl.length)
+      console.log("[Sign Agreement] Signature preview:", signatureDataUrl.substring(0, 100))
 
-      // Upload signature to storage
-      const formData = new FormData()
-      const blob = await fetch(signatureDataUrl).then((r) => r.blob())
-      formData.append("file", blob, `signature-${agreementId}.png`)
-
-      const uploadResponse = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      })
-
-      if (!uploadResponse.ok) {
-        throw new Error("Failed to upload signature")
-      }
-
-      const { url: signatureUrl } = await uploadResponse.json()
-
-      // Save signature to agreement (pass both URL and base64 for server-side PDF generation)
-      const result = await signAgreementAction(agreementId, signatureUrl, customerName, signatureDataUrl)
+      // Save signature to agreement - store base64 directly (same as admin, no upload to storage)
+      // Use a placeholder URL since we're storing base64 directly
+      const placeholderUrl = "base64-signature-stored"
+      console.log("[Sign Agreement] Saving signature to agreement (base64 only, no storage upload)...")
+      const result = await signAgreementAction(agreementId, placeholderUrl, customerName, signatureDataUrl)
 
       if (!result.success) {
+        console.error("[Sign Agreement] Failed to save signature:", result.error)
         toast.error(result.error || "Failed to sign agreement")
         setIsSigning(false)
         return
       }
+
+      console.log("[Sign Agreement] Signature saved to agreement successfully (base64 stored directly)")
 
       // Generate PDF with signature immediately
       toast.info("Generating signed PDF...")
@@ -248,13 +256,16 @@ export default function SignAgreementPage() {
         ],
         agreement_number: agreement.agreementNumber,
         created_date: new Date(agreement.createdAt).toLocaleDateString("en-GB"),
-        customer_signature: signatureDataUrl,
+        customer_signature: signatureDataUrl, // Use confirmed base64 signature
         customer_name_signed: customerName,
       }
       
+      console.log("[Sign Agreement] Generating PDF with signature...")
       const logoPath = companySettings?.logo_url || "/sed.jpg"
       const pdfDoc = await generateRentalAgreementPDF(pdfData, logoPath)
       const pdfBlob = pdfDoc.output("blob")
+      
+      console.log("[Sign Agreement] PDF generated, size:", pdfBlob.size, "bytes")
       
       // Trigger instant download
       const downloadUrl = URL.createObjectURL(pdfBlob)
@@ -265,6 +276,8 @@ export default function SignAgreementPage() {
       link.click()
       document.body.removeChild(link)
       URL.revokeObjectURL(downloadUrl)
+      
+      console.log("[Sign Agreement] PDF downloaded, uploading to server...")
       
       // Upload PDF to server in background
       const uploadFormData = new FormData()
@@ -277,6 +290,8 @@ export default function SignAgreementPage() {
         .then(async (res) => {
           if (res.ok) {
             const result = await res.json()
+            console.log("[Sign Agreement] PDF uploaded to server:", result.url.substring(0, 100))
+            
             // Update agreement with PDF URL
             await fetch(`/api/agreements/${agreementId}`, {
               method: "PATCH",
@@ -286,6 +301,9 @@ export default function SignAgreementPage() {
                 status: "signed",
               }),
             })
+            console.log("[Sign Agreement] Agreement updated with PDF URL")
+          } else {
+            console.error("[Sign Agreement] Failed to upload PDF:", res.status, res.statusText)
           }
         })
         .catch((err) => console.error("[Sign Agreement] Error uploading PDF:", err))
@@ -298,7 +316,7 @@ export default function SignAgreementPage() {
       
     } catch (error) {
       console.error("[Sign Agreement] Error:", error)
-      toast.error("An error occurred while signing")
+      toast.error(error instanceof Error ? error.message : "An error occurred while signing")
       setIsSigning(false)
     }
   }
@@ -366,7 +384,7 @@ export default function SignAgreementPage() {
                   variant="ghost"
                   className="text-white hover:bg-white/10"
                 >
-                  Close
+                  <X className="h-5 w-5" />
                 </Button>
               </div>
               <iframe
@@ -467,33 +485,50 @@ export default function SignAgreementPage() {
             <div className="space-y-3">
               <Label className="text-base font-semibold mb-3 block text-white">Digital Signature *</Label>
               <p className="text-sm text-white/70 mb-2">Please draw your signature in the box below:</p>
+              
               <div className="border-2 border-white/20 rounded-lg bg-white p-2">
                 <SignatureCanvas
                   ref={signatureRef}
                   canvasProps={{
                     width: 500,
                     height: 150,
-                    className: "border border-gray-300 rounded w-full",
+                    className: "border border-gray-300 rounded",
                   }}
                   backgroundColor="#ffffff"
-                  penColor="#000000"
                 />
               </div>
+              
               <div className="flex gap-2">
                 <Button
                   onClick={handleClearSignature}
                   variant="outline"
                   className="flex-1 bg-white/10 border-white/20 text-white hover:bg-white/20"
+                  disabled={isSigning}
                 >
                   Clear
                 </Button>
-                {hasSignature && (
-                  <div className="flex-1 flex items-center justify-center gap-2 bg-green-900/20 border border-green-800 rounded-lg text-green-400 text-sm px-4">
-                    <CheckCircle className="h-4 w-4" />
-                    Signature captured
-                  </div>
-                )}
+                <Button
+                  onClick={handleConfirmSignature}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                  disabled={isSigning || signatureConfirmed}
+                >
+                  {signatureConfirmed ? (
+                    <>
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Confirmed
+                    </>
+                  ) : (
+                    "Confirm Signature"
+                  )}
+                </Button>
               </div>
+              
+              {signatureConfirmed && (
+                <div className="flex items-center gap-2 bg-green-900/20 border border-green-800 rounded-lg text-green-400 text-sm px-4 py-2">
+                  <CheckCircle className="h-4 w-4" />
+                  Signature confirmed and ready to submit
+                </div>
+              )}
             </div>
 
             <div className="flex items-start gap-3 bg-white/5 border border-white/10 rounded-lg p-4">
@@ -512,7 +547,7 @@ export default function SignAgreementPage() {
 
             <Button
               onClick={handleSubmit}
-              disabled={isSigning || !hasSignature || !customerName.trim() || !termsAccepted}
+              disabled={isSigning || !signatureConfirmed || !customerName.trim() || !termsAccepted}
               className="w-full bg-red-500 hover:bg-red-600 text-white h-12 text-base font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSigning ? (

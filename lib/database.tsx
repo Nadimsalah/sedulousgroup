@@ -1668,24 +1668,16 @@ class Database {
       .single()
 
     // Preserve admin signature (stored in customer_signature_data when admin signed)
-    // Only update if it's not already a customer signature (check if it's a URL vs base64)
     const adminSignature = currentAgreement?.customer_signature_data
     const isAdminSignature = adminSignature && (adminSignature.startsWith("data:image") || adminSignature.includes("signatures/"))
 
-    // Store customer signature URL in customer_signature_data (preserving admin signature separately)
-    // We'll use signed_agreement_url for the final PDF URL later
     const updateData: any = {
-      // Store customer signature in customer_signature_data (append to preserve admin signature if needed)
-      // Actually, let's store it in a way that preserves both:
-      // - Admin signature stays in customer_signature_data (if it's base64)
-      // - Customer signature URL goes to a new field or we append it
-      // For now, store customer signature URL in customer_signature_data if admin signature is not there
-      // Otherwise, we need to store it separately
       signed_at: new Date().toISOString(),
       status: "pending", // Will be updated to "signed" when PDF is generated
       updated_at: new Date().toISOString(),
     }
 
+<<<<<<< Current (Your changes)
     // Store customer signature URL - preserve admin signature
     // Prefer base64 if available (for server-side PDF generation)
     const customerSignatureToStore = signatureBase64 || signatureUrl
@@ -1705,6 +1697,37 @@ class Database {
       updateData.customer_signature_data = customerSignatureToStore
       updateData.signed_agreement_url = signatureUrl // Also store URL here for consistency
     }
+=======
+    // Store customer signature - ALWAYS prefer base64 if available (same as admin flow)
+    // This avoids storage upload issues and works directly with PDF generation
+    const customerSignatureToStore = signatureBase64 || signatureUrl
+    
+    // Store signatures - preserve admin signature if it exists
+    if (isAdminSignature) {
+      // Admin signature exists - store both in JSON structure
+      updateData.customer_signature_data = JSON.stringify({
+        admin_signature: adminSignature,
+        customer_signature: customerSignatureToStore // Store base64 (preferred) or URL
+      })
+    } else {
+      // No admin signature - store customer signature directly as base64 (preferred) or URL
+      updateData.customer_signature_data = customerSignatureToStore
+    }
+    
+    // Only store URL in signed_agreement_url if it's a real URL (not placeholder)
+    if (signatureUrl && signatureUrl !== "base64-signature-stored" && signatureUrl.startsWith("http")) {
+      updateData.signed_agreement_url = signatureUrl
+    }
+    
+    console.log("[Database] Storing customer signature:", {
+      hasBase64: !!signatureBase64,
+      hasUrl: !!signatureUrl,
+      isAdminSignature: isAdminSignature,
+      customerSignatureType: customerSignatureToStore?.startsWith('data:image') ? 'base64' : 'URL',
+      customerSignatureLength: customerSignatureToStore?.length || 0,
+      storingAsBase64: !!signatureBase64
+    })
+>>>>>>> Incoming (Background Agent changes)
 
     const { error } = await supabase
       .from("agreements")
