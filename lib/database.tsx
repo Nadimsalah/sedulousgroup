@@ -1677,27 +1677,6 @@ class Database {
       updated_at: new Date().toISOString(),
     }
 
-<<<<<<< Current (Your changes)
-    // Store customer signature URL - preserve admin signature
-    // Prefer base64 if available (for server-side PDF generation)
-    const customerSignatureToStore = signatureBase64 || signatureUrl
-    
-    // Always store customer signature in customer_signature_data as JSON to preserve both signatures
-    if (isAdminSignature) {
-      // Admin signature is in customer_signature_data (base64)
-      // Store both signatures in a JSON structure
-      updateData.customer_signature_data = JSON.stringify({
-        admin_signature: adminSignature,
-        customer_signature: customerSignatureToStore // Store base64 if available, otherwise URL
-      })
-      updateData.signed_agreement_url = signatureUrl // Always store URL here for reference
-    } else {
-      // No admin signature, store customer signature in customer_signature_data
-      // Prefer base64 if available
-      updateData.customer_signature_data = customerSignatureToStore
-      updateData.signed_agreement_url = signatureUrl // Also store URL here for consistency
-    }
-=======
     // Store customer signature - ALWAYS prefer base64 if available (same as admin flow)
     // This avoids storage upload issues and works directly with PDF generation
     const customerSignatureToStore = signatureBase64 || signatureUrl
@@ -1727,7 +1706,6 @@ class Database {
       customerSignatureLength: customerSignatureToStore?.length || 0,
       storingAsBase64: !!signatureBase64
     })
->>>>>>> Incoming (Background Agent changes)
 
     const { error } = await supabase
       .from("agreements")
