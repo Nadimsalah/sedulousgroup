@@ -146,7 +146,9 @@ export default function UserDashboard() {
   const handleLogout = async () => {
     try {
       const supabase = createClient()
-      await supabase.auth.signOut()
+      if (supabase) {
+        await supabase.auth.signOut()
+      }
       router.replace("/login")
     } catch (error) {
       console.error("Logout error:", error)
@@ -560,7 +562,7 @@ export default function UserDashboard() {
                         type="file"
                         accept="image/*,application/pdf"
                         className="hidden"
-                        ref={(el) => (fileInputRefs.current["drivingLicenseFrontUrl"] = el)}
+                        ref={(el) => { fileInputRefs.current["drivingLicenseFrontUrl"] = el }}
                         onChange={(e) => {
                           const file = e.target.files?.[0]
                           const input = e.target as HTMLInputElement
@@ -624,7 +626,7 @@ export default function UserDashboard() {
                         type="file"
                         accept="image/*,application/pdf"
                         className="hidden"
-                        ref={(el) => (fileInputRefs.current["drivingLicenseBackUrl"] = el)}
+                        ref={(el) => { fileInputRefs.current["drivingLicenseBackUrl"] = el }}
                         onChange={(e) => {
                           const file = e.target.files?.[0]
                           const input = e.target as HTMLInputElement
@@ -688,7 +690,7 @@ export default function UserDashboard() {
                         type="file"
                         accept="image/*,application/pdf"
                         className="hidden"
-                        ref={(el) => (fileInputRefs.current["proofOfAddressUrl"] = el)}
+                        ref={(el) => { fileInputRefs.current["proofOfAddressUrl"] = el }}
                         onChange={(e) => {
                           const file = e.target.files?.[0]
                           const input = e.target as HTMLInputElement
@@ -752,7 +754,7 @@ export default function UserDashboard() {
                         type="file"
                         accept="image/*,application/pdf"
                         className="hidden"
-                        ref={(el) => (fileInputRefs.current["bankStatementUrl"] = el)}
+                        ref={(el) => { fileInputRefs.current["bankStatementUrl"] = el }}
                         onChange={(e) => {
                           const file = e.target.files?.[0]
                           const input = e.target as HTMLInputElement
@@ -816,7 +818,7 @@ export default function UserDashboard() {
                             type="file"
                             accept="image/*,application/pdf"
                             className="hidden"
-                            ref={(el) => (fileInputRefs.current["privateHireLicenseFrontUrl"] = el)}
+                            ref={(el) => { fileInputRefs.current["privateHireLicenseFrontUrl"] = el }}
                             onChange={(e) => {
                               const file = e.target.files?.[0]
                               const input = e.target as HTMLInputElement
@@ -880,7 +882,7 @@ export default function UserDashboard() {
                             type="file"
                             accept="image/*,application/pdf"
                             className="hidden"
-                            ref={(el) => (fileInputRefs.current["privateHireLicenseBackUrl"] = el)}
+                            ref={(el) => { fileInputRefs.current["privateHireLicenseBackUrl"] = el }}
                             onChange={(e) => {
                               const file = e.target.files?.[0]
                               const input = e.target as HTMLInputElement
