@@ -1,0 +1,21 @@
+.plasma-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+
+  /* Helps GPU rendering and avoids flicker on iOS */
+  contain: strict;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  -webkit-transform: translateZ(0); /* iOS Safari performance boost */
+}
+
+.plasma-container canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none; /* plasma won't block clicks */
+}
