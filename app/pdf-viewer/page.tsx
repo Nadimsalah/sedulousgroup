@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card"
 import { Download, ExternalLink, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
-export default function PDFViewerPage() {
+function PDFViewerContent() {
   const searchParams = useSearchParams()
   const pdfUrl = searchParams.get("url")
   const [inputUrl, setInputUrl] = useState(pdfUrl || "")
@@ -90,4 +90,20 @@ export default function PDFViewerPage() {
   )
 }
 
+export default function PDFViewerPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-black flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-red-500 mx-auto mb-4" />
+            <p className="text-white/70">Loading PDF viewer...</p>
+          </div>
+        </div>
+      }
+    >
+      <PDFViewerContent />
+    </Suspense>
+  )
+}
 
