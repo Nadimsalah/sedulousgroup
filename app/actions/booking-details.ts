@@ -92,6 +92,13 @@ export async function getBookingDetails(bookingId: string) {
     console.log("[v0] Agreement found:", !!agreement, "Error:", agreementError?.message)
     if (agreement) {
       console.log("[v0] Agreement details - ID:", agreement.id, "Status:", agreement.status, "Booking ID:", agreement.booking_id)
+      console.log("[v0] Agreement vehicle_photos:", agreement.vehicle_photos?.length || 0, "photos")
+      
+      // If vehicle_photos exist and are Supabase storage URLs, ensure they're accessible
+      if (agreement.vehicle_photos && agreement.vehicle_photos.length > 0) {
+        // Log the first photo URL for debugging
+        console.log("[v0] First vehicle photo URL:", agreement.vehicle_photos[0]?.substring(0, 100))
+      }
     }
 
     return { booking, agreement, user }

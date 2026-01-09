@@ -136,10 +136,10 @@ export async function refundDeposit(id: string, refundAmount: number, notes?: st
     const supabase = createAdminSupabase()
 
     const updateData: any = {
-      status: "refunded",
-      refund_amount: refundAmount,
-      refunded_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+        status: "refunded",
+        refund_amount: refundAmount,
+        refunded_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
     }
 
     if (notes) {

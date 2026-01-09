@@ -95,6 +95,22 @@ export default function StoriesPage() {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
+    
+    // Validate file sizes
+    const maxImageSize = 10 * 1024 * 1024 // 10MB
+    const maxVideoSize = 100 * 1024 * 1024 // 100MB
+    
+    for (const file of files) {
+      const isVideo = file.type.startsWith("video/")
+      const maxSize = isVideo ? maxVideoSize : maxImageSize
+      const maxSizeLabel = isVideo ? "100MB" : "10MB"
+      
+      if (file.size > maxSize) {
+        toast.error(`${file.name} exceeds ${maxSizeLabel} limit. Please choose a smaller file.`)
+        return
+      }
+    }
+    
     setStoryFiles((prev) => [...prev, ...files])
 
     const newPreviews = files.map((file) => URL.createObjectURL(file))
@@ -406,7 +422,7 @@ export default function StoriesPage() {
                 <div className="mt-2 border-2 border-dashed border-white/20 rounded-lg p-8 text-center hover:border-red-500/50 hover:bg-red-500/5 transition-colors">
                   <Upload className="h-12 w-12 mx-auto text-white/40 mb-3" />
                   <p className="text-sm font-medium text-white mb-1">Click to upload images or videos</p>
-                  <p className="text-xs text-white/60">JPG, PNG, MP4, or WEBP (Max 10MB each)</p>
+                  <p className="text-xs text-white/60">JPG, PNG, MP4, WEBM, or WEBP (Images: Max 10MB, Videos: Max 100MB)</p>
                 </div>
                 <input
                   type="file"
@@ -419,20 +435,36 @@ export default function StoriesPage() {
 
               {previewUrls.length > 0 && (
                 <div className="mt-4 grid grid-cols-3 gap-3">
-                  {previewUrls.map((url, index) => (
-                    <div key={index} className="relative aspect-square rounded-lg overflow-hidden border-2 border-white/10">
-                      <Image src={url} alt={`Preview ${index + 1}`} fill className="object-cover" />
-                      <button
-                        onClick={() => removeFile(index)}
-                        className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full hover:bg-red-600"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                      <div className="absolute bottom-1 left-1 bg-black/60 text-white text-xs px-2 py-1 rounded">
-                        {index + 1}
+                  {previewUrls.map((url, index) => {
+                    const file = storyFiles[index]
+                    const isVideo = file?.type?.startsWith("video/")
+                    
+                    return (
+                      <div key={index} className="relative aspect-square rounded-lg overflow-hidden border-2 border-white/10">
+                        {isVideo ? (
+                          <video
+                            src={url}
+                            className="w-full h-full object-cover"
+                            controls={false}
+                            muted
+                            playsInline
+                          />
+                        ) : (
+                          <Image src={url} alt={`Preview ${index + 1}`} fill className="object-cover" />
+                        )}
+                        <button
+                          onClick={() => removeFile(index)}
+                          className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 z-10"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                        <div className="absolute bottom-1 left-1 bg-black/60 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
+                          {isVideo && <span className="text-red-400">▶</span>}
+                          {index + 1}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>

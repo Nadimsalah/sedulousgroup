@@ -1,9 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Calendar, ChevronRight, Filter, Mail, Phone, Search, User, X } from "lucide-react"
+import { useState, useEffect, useCallback } from "react"
+import { Calendar, ChevronRight, ChevronDown, Filter, Mail, Phone, Search, User, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
+
+const ITEMS_PER_PAGE = 15
 
 type OrderType = {
   id: string
@@ -33,6 +35,7 @@ export default function AllOrdersPage() {
   const [error, setError] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<OrderType | null>(null)
+  const [displayCount, setDisplayCount] = useState(ITEMS_PER_PAGE)
 
   useEffect(() => {
     loadData()
@@ -41,6 +44,15 @@ export default function AllOrdersPage() {
   useEffect(() => {
     filterOrders()
   }, [searchQuery, statusFilter, typeFilter, orders])
+
+  // Reset display count when filters change
+  useEffect(() => {
+    setDisplayCount(ITEMS_PER_PAGE)
+  }, [searchQuery, statusFilter, typeFilter])
+
+  const handleLoadMore = useCallback(() => {
+    setDisplayCount(prev => prev + ITEMS_PER_PAGE)
+  }, [])
 
   const loadData = async () => {
     setIsLoading(true)
@@ -167,6 +179,10 @@ export default function AllOrdersPage() {
     completedCount: orders.filter((o) => o.status.toLowerCase() === "completed").length,
   }
 
+  // Lazy loading
+  const displayedOrders = filteredOrders.slice(0, displayCount)
+  const hasMore = displayedOrders.length < filteredOrders.length
+
   return (
     <div className="min-h-screen bg-black">
       <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
@@ -182,22 +198,30 @@ export default function AllOrdersPage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="liquid-glass border border-white/10 rounded-xl p-4">
             <div className="text-sm font-medium text-white/80 mb-2">Total Bookings</div>
-            <div className="text-3xl font-bold text-white">{bookingStats.totalBookings}</div>
+            <div className="text-3xl font-bold text-white">
+              {isLoading ? <span className="animate-pulse">...</span> : bookingStats.totalBookings}
+            </div>
           </div>
 
           <div className="liquid-glass border border-white/10 rounded-xl p-4">
             <div className="text-sm font-medium text-white/80 mb-2">Active Rentals</div>
-            <div className="text-3xl font-bold text-blue-400">{bookingStats.activeCount}</div>
+            <div className="text-3xl font-bold text-blue-400">
+              {isLoading ? <span className="animate-pulse">...</span> : bookingStats.activeCount}
+            </div>
           </div>
 
           <div className="liquid-glass border border-white/10 rounded-xl p-4">
             <div className="text-sm font-medium text-white/80 mb-2">Pending</div>
-            <div className="text-3xl font-bold text-yellow-400">{bookingStats.pendingCount}</div>
+            <div className="text-3xl font-bold text-yellow-400">
+              {isLoading ? <span className="animate-pulse">...</span> : bookingStats.pendingCount}
+            </div>
           </div>
 
           <div className="liquid-glass border border-white/10 rounded-xl p-4">
             <div className="text-sm font-medium text-white/80 mb-2">Completed</div>
-            <div className="text-3xl font-bold text-purple-400">{bookingStats.completedCount}</div>
+            <div className="text-3xl font-bold text-purple-400">
+              {isLoading ? <span className="animate-pulse">...</span> : bookingStats.completedCount}
+            </div>
           </div>
         </div>
 
@@ -287,9 +311,19 @@ export default function AllOrdersPage() {
         </div>
 
         {isLoading ? (
-          <div className="text-center py-12">
-            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-red-500 border-r-transparent"></div>
-            <p className="mt-4 text-white/60">Loading orders...</p>
+          <div className="space-y-3">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="liquid-glass border border-white/10 rounded-xl p-4 animate-pulse">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 space-y-2">
+                    <div className="h-5 bg-white/10 rounded w-1/4" />
+                    <div className="h-4 bg-white/5 rounded w-1/3" />
+                    <div className="h-4 bg-white/5 rounded w-1/2" />
+                  </div>
+                  <div className="h-6 w-6 bg-white/10 rounded" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : filteredOrders.length === 0 ? (
           <div className="liquid-glass border border-white/10 rounded-xl p-12 text-center">
@@ -301,7 +335,7 @@ export default function AllOrdersPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {filteredOrders.map((order) => {
+            {displayedOrders.map((order) => {
               const startDate = order.pickupDate ? new Date(order.pickupDate) : null
               const endDate = order.dropoffDate ? new Date(order.dropoffDate) : null
               const days =
@@ -384,6 +418,19 @@ export default function AllOrdersPage() {
                 </div>
               )
             })}
+
+            {/* Load More Button */}
+            {hasMore && (
+              <div className="pt-4">
+                <Button
+                  onClick={handleLoadMore}
+                  className="w-full bg-white/10 hover:bg-white/20 text-white border border-white/20"
+                >
+                  <ChevronDown className="h-4 w-4 mr-2" />
+                  Load More ({filteredOrders.length - displayedOrders.length} remaining)
+                </Button>
+              </div>
+            )}
           </div>
         )}
 

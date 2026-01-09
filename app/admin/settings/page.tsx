@@ -10,6 +10,7 @@ import {
   Settings,
   Database,
   AlertCircle,
+  Mail,
 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -91,6 +92,14 @@ export default function SettingsPage() {
       icon: Settings,
       href: "/admin/settings/general",
       color: "from-blue-500 to-blue-600",
+      requiresTable: "settings",
+    },
+    {
+      title: "Email Settings",
+      description: "Configure Resend API key and email service settings",
+      icon: Mail,
+      href: "/admin/settings/email",
+      color: "from-green-500 to-green-600",
       requiresTable: "settings",
     },
   ]

@@ -15,9 +15,9 @@ export async function createVendor(data: {
 }) {
   try {
     console.log("[Vendors] Creating vendor with data:", {
-      name: data.name,
+        name: data.name,
       vendorType: data.vendorType,
-      email: data.email,
+        email: data.email,
     })
 
     // Use database method which uses admin client
@@ -31,7 +31,7 @@ export async function createVendor(data: {
       rating: undefined,
       notes: data.notes || undefined,
       isActive: true,
-    })
+      })
 
     if (!vendor) {
       console.error("[Vendors] Failed to create vendor - no data returned")

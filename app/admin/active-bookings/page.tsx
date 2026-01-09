@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import {
   Car,
@@ -16,6 +16,8 @@ import {
   Eye,
   RefreshCw,
   Search,
+  Loader2,
+  ChevronDown,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -25,6 +27,8 @@ import { getAllBookingsAction, type BookingWithDetails } from "@/app/actions/boo
 import Link from "next/link"
 import Image from "next/image"
 
+const ITEMS_PER_PAGE = 10
+
 export default function ActiveBookingsPage() {
   const router = useRouter()
   const [bookings, setBookings] = useState<BookingWithDetails[]>([])
@@ -32,6 +36,7 @@ export default function ActiveBookingsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [displayCount, setDisplayCount] = useState(ITEMS_PER_PAGE)
 
   useEffect(() => {
     loadBookings()
@@ -40,6 +45,11 @@ export default function ActiveBookingsPage() {
   useEffect(() => {
     filterBookings()
   }, [bookings, searchQuery])
+
+  // Reset display count when search changes
+  useEffect(() => {
+    setDisplayCount(ITEMS_PER_PAGE)
+  }, [searchQuery])
 
   const loadBookings = async () => {
     try {
@@ -62,6 +72,10 @@ export default function ActiveBookingsPage() {
       setIsLoading(false)
     }
   }
+
+  const handleLoadMore = useCallback(() => {
+    setDisplayCount(prev => prev + ITEMS_PER_PAGE)
+  }, [])
 
   const filterBookings = () => {
     let filtered = bookings
@@ -102,16 +116,9 @@ export default function ActiveBookingsPage() {
     totalRevenue: bookings.reduce((sum, b) => sum + (b.total_amount || 0), 0),
   }
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-center">
-          <RefreshCw className="h-8 w-8 text-red-500 animate-spin mx-auto mb-4" />
-          <p className="text-white">Loading active bookings...</p>
-        </div>
-      </div>
-    )
-  }
+  // Lazy loading variables
+  const displayedBookings = filteredBookings.slice(0, displayCount)
+  const hasMore = displayedBookings.length < filteredBookings.length
 
   return (
     <div className="min-h-screen bg-black p-4 md:p-6 lg:p-8">
@@ -144,7 +151,9 @@ export default function ActiveBookingsPage() {
               <Car className="h-4 w-4 text-green-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-white">{stats.total}</div>
+              <div className="text-2xl font-bold text-white">
+                {isLoading ? <span className="animate-pulse">...</span> : stats.total}
+              </div>
               <p className="text-xs text-white/60 mt-1">Cars on rent</p>
             </CardContent>
           </Card>
@@ -155,7 +164,9 @@ export default function ActiveBookingsPage() {
               <AlertCircle className="h-4 w-4 text-red-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-400">{stats.overdue}</div>
+              <div className="text-2xl font-bold text-red-400">
+                {isLoading ? <span className="animate-pulse">...</span> : stats.overdue}
+              </div>
               <p className="text-xs text-white/60 mt-1">Past return date</p>
             </CardContent>
           </Card>
@@ -166,7 +177,9 @@ export default function ActiveBookingsPage() {
               <Clock className="h-4 w-4 text-yellow-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-yellow-400">{stats.dueToday}</div>
+              <div className="text-2xl font-bold text-yellow-400">
+                {isLoading ? <span className="animate-pulse">...</span> : stats.dueToday}
+              </div>
               <p className="text-xs text-white/60 mt-1">Returning today</p>
             </CardContent>
           </Card>
@@ -177,7 +190,9 @@ export default function ActiveBookingsPage() {
               <DollarSign className="h-4 w-4 text-blue-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-white">£{stats.totalRevenue.toFixed(2)}</div>
+              <div className="text-2xl font-bold text-white">
+                {isLoading ? <span className="animate-pulse">...</span> : `£${stats.totalRevenue.toFixed(2)}`}
+              </div>
               <p className="text-xs text-white/60 mt-1">From active rentals</p>
             </CardContent>
           </Card>
@@ -202,7 +217,27 @@ export default function ActiveBookingsPage() {
         )}
 
         {/* Bookings List */}
-        {filteredBookings.length === 0 ? (
+        {isLoading ? (
+          <div className="space-y-4">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="liquid-glass rounded-2xl p-6 border border-white/10 animate-pulse">
+                <div className="flex flex-col lg:flex-row gap-6">
+                  <div className="flex-1 flex items-start gap-4">
+                    <div className="w-24 h-24 rounded-lg bg-white/10" />
+                    <div className="flex-1 space-y-3">
+                      <div className="h-6 bg-white/10 rounded w-1/3" />
+                      <div className="h-4 bg-white/5 rounded w-1/4" />
+                    </div>
+                  </div>
+                  <div className="lg:w-64 space-y-3">
+                    <div className="h-4 bg-white/10 rounded w-1/2" />
+                    <div className="h-3 bg-white/5 rounded w-2/3" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filteredBookings.length === 0 ? (
           <div className="liquid-glass rounded-2xl p-12 border border-white/10 text-center">
             <Car className="h-16 w-16 text-gray-600 mx-auto mb-4" />
             <p className="text-gray-400 text-lg">No active bookings found</p>
@@ -212,7 +247,7 @@ export default function ActiveBookingsPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {filteredBookings.map((booking) => {
+            {displayedBookings.map((booking) => {
               const daysRemaining = getDaysRemaining(booking.dropoff_date)
               const overdue = isOverdue(booking.dropoff_date)
 
@@ -350,6 +385,19 @@ export default function ActiveBookingsPage() {
                 </div>
               )
             })}
+
+            {/* Load More Button */}
+            {hasMore && (
+              <div className="pt-4">
+                <Button
+                  onClick={handleLoadMore}
+                  className="w-full bg-white/10 hover:bg-white/20 text-white border border-white/20"
+                >
+                  <ChevronDown className="h-4 w-4 mr-2" />
+                  Load More ({filteredBookings.length - displayedBookings.length} remaining)
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>

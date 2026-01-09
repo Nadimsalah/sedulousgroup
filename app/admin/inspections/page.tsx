@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Camera, Upload, X, CheckCircle, Clock, FileText, Car, Search, AlertCircle, Calendar } from "lucide-react"
+import { useState, useEffect, useCallback } from "react"
+import { Camera, Upload, X, CheckCircle, Clock, FileText, Car, Search, AlertCircle, Calendar, Loader2, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -17,11 +17,17 @@ import { createInspectionAction, getInspectionsByBookingAction } from "@/app/act
 import { toast } from "sonner"
 import Link from "next/link"
 
+const ITEMS_PER_PAGE = 10
+
 export default function InspectionsPage() {
   const [bookings, setBookings] = useState<BookingWithDetails[]>([])
   const [cars, setCars] = useState<any[]>([])
   const [inspections, setInspections] = useState<Record<string, any[]>>({})
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingBookings, setIsLoadingBookings] = useState(true)
+  const [isLoadingInspections, setIsLoadingInspections] = useState(false)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [displayCount, setDisplayCount] = useState(ITEMS_PER_PAGE)
+  const [loadedInspectionIds, setLoadedInspectionIds] = useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = useState("")
   const [filterType, setFilterType] = useState<"all" | "returning-today" | "no-handover" | "no-return" | "completed">("all")
   const [selectedBooking, setSelectedBooking] = useState<BookingWithDetails | null>(null)
@@ -38,13 +44,19 @@ export default function InspectionsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
-    loadData()
+    loadBookingsAndCars()
   }, [])
 
-  const loadData = async () => {
-    setIsLoading(true)
+  // Reset display count when filters change
+  useEffect(() => {
+    setDisplayCount(ITEMS_PER_PAGE)
+  }, [searchQuery, filterType])
+
+  // PHASE 1: Load bookings and cars first (fast - shows page immediately)
+  const loadBookingsAndCars = async () => {
+    setIsLoadingBookings(true)
     try {
-      // Fetch all bookings and cars
+      // Fetch all bookings and cars in parallel
       const [bookingsResult, carsData] = await Promise.all([
         getAllBookingsAction(),
         getCarsAction(),
@@ -58,26 +70,93 @@ export default function InspectionsPage() {
 
       setBookings(activeBookings)
       setCars(carsData || [])
+      setIsLoadingBookings(false)
 
-      // Load inspections for all active bookings
-      const inspectionsData: Record<string, any[]> = {}
-      for (const booking of activeBookings) {
-        try {
-          const bookingInspections = await getInspectionsByBookingAction(booking.id)
-          inspectionsData[booking.id] = bookingInspections || []
-        } catch (error) {
-          console.error(`Error loading inspections for booking ${booking.id}:`, error)
-          inspectionsData[booking.id] = []
-        }
-      }
-      setInspections(inspectionsData)
+      // PHASE 2: Load inspections in background (lazy)
+      loadInitialInspections(activeBookings)
     } catch (error) {
       console.error("Error loading data:", error)
-      toast.error("Failed to load inspections data")
-    } finally {
-      setIsLoading(false)
+      toast.error("Failed to load data")
+      setIsLoadingBookings(false)
     }
   }
+
+  // PHASE 2: Load inspections for visible bookings in background
+  const loadInitialInspections = async (allBookings: BookingWithDetails[]) => {
+    setIsLoadingInspections(true)
+    try {
+      const initialBookings = allBookings.slice(0, ITEMS_PER_PAGE)
+      const loadedIds = new Set<string>()
+      
+      // Parallel loading - much faster!
+      const inspectionPromises = initialBookings.map(async (booking: BookingWithDetails) => {
+        try {
+          const bookingInspections = await getInspectionsByBookingAction(booking.id)
+          return { bookingId: booking.id, inspections: bookingInspections || [] }
+        } catch (error) {
+          return { bookingId: booking.id, inspections: [] }
+        }
+      })
+      
+      const results = await Promise.all(inspectionPromises)
+      const inspectionsData: Record<string, any[]> = {}
+      results.forEach(({ bookingId, inspections: insp }) => {
+        inspectionsData[bookingId] = insp
+        loadedIds.add(bookingId)
+      })
+      
+      setInspections(inspectionsData)
+      setLoadedInspectionIds(loadedIds)
+    } catch (error) {
+      console.error("Error loading inspections:", error)
+    } finally {
+      setIsLoadingInspections(false)
+    }
+  }
+
+  // Load inspections for more bookings in PARALLEL
+  const loadInspectionsForBookings = useCallback(async (bookingIds: string[]) => {
+    const newIds = bookingIds.filter(id => !loadedInspectionIds.has(id))
+    if (newIds.length === 0) return
+
+    setIsLoadingMore(true)
+    try {
+      const inspectionPromises = newIds.map(async (bookingId) => {
+        try {
+          const bookingInspections = await getInspectionsByBookingAction(bookingId)
+          return { bookingId, inspections: bookingInspections || [] }
+        } catch (error) {
+          return { bookingId, inspections: [] }
+        }
+      })
+      
+      const results = await Promise.all(inspectionPromises)
+      const newInspections: Record<string, any[]> = {}
+      results.forEach(({ bookingId, inspections: insp }) => {
+        newInspections[bookingId] = insp
+      })
+      
+      setInspections(prev => ({ ...prev, ...newInspections }))
+      setLoadedInspectionIds(prev => {
+        const updated = new Set(prev)
+        newIds.forEach(id => updated.add(id))
+        return updated
+      })
+    } catch (error) {
+      console.error("Error loading more inspections:", error)
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }, [loadedInspectionIds])
+
+  const handleLoadMore = useCallback(() => {
+    const newCount = displayCount + ITEMS_PER_PAGE
+    setDisplayCount(newCount)
+    
+    // Load inspections for newly visible bookings
+    const newlyVisibleBookings = bookings.slice(displayCount, newCount)
+    loadInspectionsForBookings(newlyVisibleBookings.map(b => b.id))
+  }, [displayCount, bookings, loadInspectionsForBookings])
 
   const handleFileUpload = async (file: File, type: "exterior" | "interior" | "damage") => {
     try {
@@ -300,16 +379,9 @@ export default function InspectionsPage() {
       return aDays - bDays
     })
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-center space-y-3">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-white/10 border-t-red-500 mx-auto" />
-          <p className="text-white/60">Loading inspections...</p>
-        </div>
-      </div>
-    )
-  }
+  // Lazy loading: only display up to displayCount items
+  const displayedBookings = filteredBookings.slice(0, displayCount)
+  const hasMore = displayedBookings.length < filteredBookings.length
 
   return (
     <div className="min-h-screen bg-black p-4 md:p-6 lg:p-8">
@@ -334,7 +406,9 @@ export default function InspectionsPage() {
               <Car className="h-4 w-4 text-white/40" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-white">{stats.total}</div>
+              <div className="text-2xl font-bold text-white">
+                {isLoadingBookings ? <span className="animate-pulse">...</span> : stats.total}
+              </div>
               <p className="text-xs text-white/60 mt-1">Bookings</p>
             </CardContent>
           </Card>
@@ -345,7 +419,9 @@ export default function InspectionsPage() {
               <AlertCircle className="h-4 w-4 text-yellow-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-yellow-400">{stats.returningToday}</div>
+              <div className="text-2xl font-bold text-yellow-400">
+                {isLoadingBookings ? <span className="animate-pulse">...</span> : stats.returningToday}
+              </div>
               <p className="text-xs text-white/60 mt-1">Due today</p>
             </CardContent>
           </Card>
@@ -356,7 +432,9 @@ export default function InspectionsPage() {
               <Clock className="h-4 w-4 text-red-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-400">{stats.withoutHandover}</div>
+              <div className="text-2xl font-bold text-red-400">
+                {isLoadingBookings || isLoadingInspections ? <span className="animate-pulse">...</span> : stats.withoutHandover}
+              </div>
               <p className="text-xs text-white/60 mt-1">Need inspection</p>
             </CardContent>
           </Card>
@@ -367,7 +445,9 @@ export default function InspectionsPage() {
               <FileText className="h-4 w-4 text-blue-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-blue-400">{stats.withoutReturn}</div>
+              <div className="text-2xl font-bold text-blue-400">
+                {isLoadingBookings || isLoadingInspections ? <span className="animate-pulse">...</span> : stats.withoutReturn}
+              </div>
               <p className="text-xs text-white/60 mt-1">Pending return</p>
             </CardContent>
           </Card>
@@ -378,7 +458,9 @@ export default function InspectionsPage() {
               <CheckCircle className="h-4 w-4 text-green-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-400">{stats.completed}</div>
+              <div className="text-2xl font-bold text-green-400">
+                {isLoadingBookings || isLoadingInspections ? <span className="animate-pulse">...</span> : stats.completed}
+              </div>
               <p className="text-xs text-white/60 mt-1">Bookings with both inspections</p>
             </CardContent>
           </Card>
@@ -434,21 +516,42 @@ export default function InspectionsPage() {
                     : filterType === "no-return"
                       ? "No Return Inspection"
                       : "Completed Inspections"}
+              {displayedBookings.length < filteredBookings.length && (
+                <span className="text-sm font-normal text-gray-400 ml-2">
+                  (Showing {displayedBookings.length} of {filteredBookings.length})
+                </span>
+              )}
             </h2>
             <Badge className="bg-white/10 text-white border-white/20">
               {filteredBookings.length} {filteredBookings.length === 1 ? "booking" : "bookings"}
             </Badge>
           </div>
 
-          {filteredBookings.length === 0 ? (
+          {isLoadingBookings ? (
+            <div className="space-y-4">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="bg-white/5 border border-white/10 rounded-xl p-4 animate-pulse">
+                  <div className="flex items-start gap-4">
+                    <div className="h-16 w-16 rounded-lg bg-white/10" />
+                    <div className="flex-1 space-y-3">
+                      <div className="h-5 bg-white/10 rounded w-1/3" />
+                      <div className="h-4 bg-white/5 rounded w-1/4" />
+                      <div className="h-3 bg-white/5 rounded w-1/2" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : filteredBookings.length === 0 ? (
             <div className="text-center py-12">
               <Camera className="h-16 w-16 text-white/20 mx-auto mb-4" />
               <p className="text-white/60">No active bookings found</p>
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredBookings.map((booking) => {
+              {displayedBookings.map((booking) => {
                 const car = getCar(booking.car_id)
+                const isInspectionLoading = !loadedInspectionIds.has(booking.id)
                 const bookingInspections = inspections[booking.id] || []
                 const hasHandover = bookingInspections.some((i) => i.inspection_type === "handover")
                 const hasReturn = bookingInspections.some((i) => i.inspection_type === "return")
@@ -461,7 +564,7 @@ export default function InspectionsPage() {
                     className={`bg-white/5 border rounded-xl p-4 hover:bg-white/10 transition-colors ${
                       returningToday
                         ? "border-yellow-500/50 bg-yellow-500/10"
-                        : !hasHandover
+                        : !hasHandover && !isInspectionLoading
                           ? "border-red-500/30 bg-red-500/5"
                           : "border-white/10"
                     }`}
@@ -482,7 +585,7 @@ export default function InspectionsPage() {
                                 Returning Today
                               </Badge>
                             )}
-                            {!hasHandover && (
+                            {!isInspectionLoading && !hasHandover && (
                               <Badge className="bg-red-500/20 text-red-400 border border-red-500/30">
                                 <Clock className="h-3 w-3 mr-1" />
                                 No Handover Inspection
@@ -513,34 +616,41 @@ export default function InspectionsPage() {
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 mt-3 flex-wrap">
-                            {hasHandover ? (
-                              <Badge className="bg-green-500/20 text-green-400 border border-green-500/30">
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                Handover ✓
-                              </Badge>
-                            ) : (
-                              <Badge className="bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
-                                <Clock className="h-3 w-3 mr-1" />
-                                Handover Pending
-                              </Badge>
-                            )}
-                            {hasReturn ? (
-                              <Badge className="bg-green-500/20 text-green-400 border border-green-500/30">
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                Return ✓
-                              </Badge>
-                            ) : (
-                              <Badge className="bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                                <Clock className="h-3 w-3 mr-1" />
-                                Return Pending
-                              </Badge>
-                            )}
-                          </div>
+                          {isInspectionLoading ? (
+                            <div className="flex items-center gap-2 mt-3 text-white/50">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <span className="text-sm">Loading inspection status...</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 mt-3 flex-wrap">
+                              {hasHandover ? (
+                                <Badge className="bg-green-500/20 text-green-400 border border-green-500/30">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Handover ✓
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  Handover Pending
+                                </Badge>
+                              )}
+                              {hasReturn ? (
+                                <Badge className="bg-green-500/20 text-green-400 border border-green-500/30">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Return ✓
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  Return Pending
+                                </Badge>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="flex gap-2 shrink-0">
-                        {!hasHandover && (
+                        {!isInspectionLoading && !hasHandover && (
                           <Button
                             onClick={() => {
                               setSelectedBooking(booking)
@@ -554,7 +664,7 @@ export default function InspectionsPage() {
                             Handover
                           </Button>
                         )}
-                        {hasHandover && !hasReturn && (
+                        {!isInspectionLoading && hasHandover && !hasReturn && (
                           <Button
                             onClick={() => {
                               setSelectedBooking(booking)
@@ -578,6 +688,29 @@ export default function InspectionsPage() {
                   </div>
                 )
               })}
+
+              {/* Load More Button */}
+              {hasMore && (
+                <div className="pt-4">
+                  <Button
+                    onClick={handleLoadMore}
+                    disabled={isLoadingMore}
+                    className="w-full bg-white/10 hover:bg-white/20 text-white border border-white/20"
+                  >
+                    {isLoadingMore ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        Loading more...
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="h-4 w-4 mr-2" />
+                        Load More ({filteredBookings.length - displayedBookings.length} remaining)
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>

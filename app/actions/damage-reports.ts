@@ -38,8 +38,8 @@ export async function createDamageReport(data: {
       vehicleId: data.vehicleId,
       customerId: data.customerId || undefined,
       damageType: data.damageType,
-      severity: data.severity,
-      description: data.description,
+        severity: data.severity,
+        description: data.description,
       locationOnVehicle: data.locationOnVehicle || undefined,
       incidentDate: data.incidentDate,
       reportedDate: new Date().toISOString(),
@@ -50,7 +50,7 @@ export async function createDamageReport(data: {
       responsibleParty: data.responsibleParty || undefined,
       notes: data.notes || undefined,
       reportedBy: data.reportedBy || undefined,
-    })
+      })
 
     if (!report) {
       console.error("[Damage Reports] Failed to create damage report - no data returned")

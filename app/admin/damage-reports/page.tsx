@@ -47,7 +47,7 @@ export default function DamageReportsPage() {
     setIsLoading(true)
     try {
       console.log("[Damage Reports Page] Loading data...")
-      const [fetchedReports, fetchedVehicles] = await Promise.all([getDamageReports(), getCarsAction()])
+    const [fetchedReports, fetchedVehicles] = await Promise.all([getDamageReports(), getCarsAction()])
       console.log("[Damage Reports Page] Loaded reports:", fetchedReports.length)
       console.log("[Damage Reports Page] Loaded vehicles:", fetchedVehicles?.length || 0)
       setReports(fetchedReports || [])
@@ -56,7 +56,7 @@ export default function DamageReportsPage() {
       console.error("[Damage Reports Page] Error loading data:", error)
       toast.error("Failed to load damage reports")
     } finally {
-      setIsLoading(false)
+    setIsLoading(false)
     }
   }
 
@@ -99,43 +99,43 @@ export default function DamageReportsPage() {
         photosCount: uploadedPhotos.length,
       })
 
-      const result = await createDamageReport({
+    const result = await createDamageReport({
         vehicleId: newReport.vehicleId,
         damageType: newReport.damageType,
         severity: newReport.severity,
         description: newReport.description,
         locationOnVehicle: newReport.locationOnVehicle || undefined,
         incidentDate: newReport.incidentDate,
-        damagePhotos: uploadedPhotos,
-        damageVideos: [],
+      damagePhotos: uploadedPhotos,
+      damageVideos: [],
         estimatedCost: newReport.estimatedCost || undefined,
-        responsibleParty: "customer",
-        notes: "",
+      responsibleParty: "customer",
+      notes: "",
         bookingId: undefined,
         agreementId: undefined,
         customerId: undefined,
         reportedBy: undefined,
-      })
+    })
 
       console.log("[Damage Reports] Create result:", result)
 
-      if (result.success) {
+    if (result.success) {
         toast.success("Damage report created successfully!")
-        setShowCreateDialog(false)
+      setShowCreateDialog(false)
         // Reset form
-        setNewReport({
-          vehicleId: "",
-          damageType: "scratch",
-          severity: "minor",
-          description: "",
-          locationOnVehicle: "",
-          incidentDate: new Date().toISOString().split("T")[0],
-          estimatedCost: 0,
-        })
-        setUploadedPhotos([])
+      setNewReport({
+        vehicleId: "",
+        damageType: "scratch",
+        severity: "minor",
+        description: "",
+        locationOnVehicle: "",
+        incidentDate: new Date().toISOString().split("T")[0],
+        estimatedCost: 0,
+      })
+      setUploadedPhotos([])
         // Reload data
         await loadData()
-      } else {
+    } else {
         const errorMessage = result.error instanceof Error ? result.error.message : String(result.error)
         console.error("[Damage Reports] Failed to create report:", errorMessage)
         toast.error(`Failed to create report: ${errorMessage}`, {
@@ -167,7 +167,7 @@ export default function DamageReportsPage() {
       r.damageType?.toLowerCase().includes(query) ||
       r.locationOnVehicle?.toLowerCase().includes(query) ||
       vehicles.find((v) => v.id === r.vehicleId)?.name?.toLowerCase().includes(query)
-    )
+  )
   })
 
   const getSeverityColor = (severity: string) => {

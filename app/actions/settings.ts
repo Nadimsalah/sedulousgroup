@@ -53,6 +53,18 @@ export interface GeneralSettings {
   registration_enabled: boolean
 }
 
+export interface EmailSettings {
+  from_email: string
+  from_name: string
+  smtp_host?: string
+  smtp_port?: number
+  smtp_user?: string
+  smtp_password?: string
+  send_booking_confirmation: boolean
+  send_booking_reminder: boolean
+  send_document_notification: boolean
+}
+
 // Booking Settings
 export async function getBookingSettings(): Promise<BookingSettings> {
   try {
@@ -300,6 +312,82 @@ export async function updateGeneralSettings(settings: GeneralSettings) {
     return { success: true, data }
   } catch (error) {
     console.error("Error updating general settings:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    }
+  }
+}
+
+// Email Settings
+export async function getEmailSettings(): Promise<EmailSettings> {
+  try {
+    const supabase = createAdminSupabase()
+    const { data, error } = await supabase
+      .from("settings")
+      .select("*")
+      .eq("key", "email")
+      .single()
+
+    if (error || !data) {
+      // Return default settings if not found
+      return {
+        from_email: "noreply@sedulousgroup.net",
+        from_name: "Sedulous Group Ltd",
+        send_booking_confirmation: true,
+        send_booking_reminder: true,
+        send_document_notification: true,
+      }
+    }
+
+    return data.value as EmailSettings
+  } catch (error) {
+    console.error("Error fetching email settings:", error)
+    // Return default settings on error
+    return {
+      from_email: "noreply@sedulousgroup.net",
+      from_name: "Sedulous Group Ltd",
+      send_booking_confirmation: true,
+      send_booking_reminder: true,
+      send_document_notification: true,
+    }
+  }
+}
+
+export async function updateEmailSettings(settings: EmailSettings) {
+  try {
+    const supabase = createAdminSupabase()
+    const { data, error } = await supabase
+      .from("settings")
+      .upsert(
+        {
+          key: "email",
+          value: settings,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: "key",
+        }
+      )
+      .select()
+      .single()
+
+    if (error) {
+      console.error("[Settings] Error updating email settings:", error)
+      
+      if (error.code === "42P01" || error.message?.includes("does not exist") || error.message?.includes("schema cache")) {
+        return {
+          success: false,
+          error: "Settings table does not exist. Go to /admin/settings/setup to create the required tables.",
+        }
+      }
+      
+      throw new Error(`Failed to update email settings: ${error.message}`)
+    }
+
+    return { success: true, data }
+  } catch (error) {
+    console.error("Error updating email settings:", error)
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",

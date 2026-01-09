@@ -37,6 +37,15 @@ export async function POST(request: NextRequest) {
       totalAmount,
       bookingType,
       userId,
+      // Document fields
+      niNumber,
+      drivingLicenseFrontUrl,
+      drivingLicenseBackUrl,
+      proofOfAddressUrl,
+      bankStatementUrl,
+      privateHireLicenseFrontUrl,
+      privateHireLicenseBackUrl,
+      status,
     } = body
 
     // Validate required fields
@@ -60,8 +69,14 @@ export async function POST(request: NextRequest) {
     }
     const bookingId = `SED-${shortCode}`
 
-    // Create booking
-    const bookingData = {
+    // Determine initial status based on documents
+    let bookingStatus = status || "Pending Review"
+    if (drivingLicenseFrontUrl && drivingLicenseBackUrl && proofOfAddressUrl) {
+      bookingStatus = "Documents Submitted"
+    }
+
+    // Create booking with document data
+    const bookingData: any = {
       id: bookingId,
       car_id: carId,
       user_id: userId || null,
@@ -76,11 +91,33 @@ export async function POST(request: NextRequest) {
       pickup_time: pickupTime || "10:00",
       dropoff_time: dropoffTime || "10:00",
       total_amount: totalAmount || 0,
-      status: "Pending Review",
+      status: bookingStatus,
       booking_type: bookingType || "Rent",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
+
+    // Add document fields if present
+    if (niNumber) bookingData.ni_number = niNumber
+    if (drivingLicenseFrontUrl) bookingData.driving_license_front_url = drivingLicenseFrontUrl
+    if (drivingLicenseBackUrl) bookingData.driving_license_back_url = drivingLicenseBackUrl
+    if (proofOfAddressUrl) bookingData.proof_of_address_url = proofOfAddressUrl
+    if (bankStatementUrl) bookingData.bank_statement_url = bankStatementUrl
+    if (privateHireLicenseFrontUrl) bookingData.private_hire_license_front_url = privateHireLicenseFrontUrl
+    if (privateHireLicenseBackUrl) bookingData.private_hire_license_back_url = privateHireLicenseBackUrl
+
+    // Set documents submitted timestamp if documents are provided
+    if (drivingLicenseFrontUrl && drivingLicenseBackUrl && proofOfAddressUrl) {
+      bookingData.documents_submitted_at = new Date().toISOString()
+    }
+
+    console.log("[v0] Creating booking with data:", {
+      ...bookingData,
+      driving_license_front_url: bookingData.driving_license_front_url ? "✓" : undefined,
+      driving_license_back_url: bookingData.driving_license_back_url ? "✓" : undefined,
+      proof_of_address_url: bookingData.proof_of_address_url ? "✓" : undefined,
+      bank_statement_url: bookingData.bank_statement_url ? "✓" : undefined,
+    })
 
     const { data, error } = await supabase.from("bookings").insert(bookingData).select().single()
 
@@ -89,6 +126,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 })
     }
 
+    console.log("[v0] Booking created successfully:", data.id, "Status:", data.status)
+
     return NextResponse.json({
       success: true,
       booking: {
@@ -96,6 +135,7 @@ export async function POST(request: NextRequest) {
         customerName: data.customer_name,
         customerEmail: data.customer_email,
         status: data.status,
+        documentsSubmitted: !!data.documents_submitted_at,
       },
     })
   } catch (error) {

@@ -1,12 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Users, Search, Mail, Phone, Calendar, MapPin, Car, Filter, Download, Eye, MoreVertical } from "lucide-react"
+import { Users, Search, Mail, Phone, Calendar, MapPin, Car, Filter, Download, Eye, MoreVertical, ChevronDown } from "lucide-react"
 import { toast } from "sonner"
 import Link from "next/link"
+
+const ITEMS_PER_PAGE = 15
 
 interface Customer {
   id: string
@@ -32,6 +34,16 @@ export default function CustomersClient({
 }) {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "blocked">("all")
+  const [displayCount, setDisplayCount] = useState(ITEMS_PER_PAGE)
+
+  // Reset display count when filters change
+  useEffect(() => {
+    setDisplayCount(ITEMS_PER_PAGE)
+  }, [searchQuery, statusFilter])
+
+  const handleLoadMore = useCallback(() => {
+    setDisplayCount(prev => prev + ITEMS_PER_PAGE)
+  }, [])
 
   const filteredCustomers = initialCustomers.filter((customer) => {
     const matchesSearch =
@@ -43,6 +55,10 @@ export default function CustomersClient({
 
     return matchesSearch && matchesStatus
   })
+
+  // Lazy loading
+  const displayedCustomers = filteredCustomers.slice(0, displayCount)
+  const hasMore = displayedCustomers.length < filteredCustomers.length
 
   const exportToCSV = () => {
     try {
@@ -161,7 +177,14 @@ export default function CustomersClient({
       {/* Customers List */}
       <div className="liquid-glass rounded-2xl border border-white/10 overflow-hidden">
         <div className="p-4 md:p-6">
-          <h2 className="text-xl font-bold text-white mb-4">Customers ({filteredCustomers.length})</h2>
+          <h2 className="text-xl font-bold text-white mb-4">
+            Customers ({filteredCustomers.length})
+            {displayedCustomers.length < filteredCustomers.length && (
+              <span className="text-sm font-normal text-gray-500 ml-2">
+                (Showing {displayedCustomers.length})
+              </span>
+            )}
+          </h2>
 
           {filteredCustomers.length === 0 ? (
             <div className="text-center py-12">
@@ -170,7 +193,7 @@ export default function CustomersClient({
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredCustomers.map((customer) => (
+              {displayedCustomers.map((customer) => (
                 <div
                   key={customer.id}
                   className="bg-white/5 border border-white/10 rounded-xl p-4 md:p-6 hover:bg-white/10 transition-all"
@@ -267,6 +290,19 @@ export default function CustomersClient({
                   </div>
                 </div>
               ))}
+
+              {/* Load More Button */}
+              {hasMore && (
+                <div className="pt-4">
+                  <Button
+                    onClick={handleLoadMore}
+                    className="w-full bg-white/10 hover:bg-white/20 text-white border border-white/20"
+                  >
+                    <ChevronDown className="h-4 w-4 mr-2" />
+                    Load More ({filteredCustomers.length - displayedCustomers.length} remaining)
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>

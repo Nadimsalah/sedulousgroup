@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Car, Clock, TrendingUp, Package, FileText, Camera, Loader2, LogOut, Upload, Download, CheckCircle2, XCircle, Eye } from "lucide-react"
+import { Car, Clock, TrendingUp, Package, FileText, Camera, Loader2, LogOut, Upload, Download, CheckCircle2, XCircle, Eye, AlertTriangle, RotateCcw } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { getUserDashboardData, type UserDashboardData } from "@/app/actions/user-dashboard"
@@ -44,6 +44,27 @@ export default function UserDashboard() {
           agreements: result.data?.agreements.length,
           stats: result.data?.stats,
         })
+        // Log all bookings statuses
+        console.log("[v0] All booking statuses:", result.data?.bookings.map(b => ({
+          id: b.id,
+          status: b.status,
+          can_resubmit: b.can_resubmit
+        })))
+        
+        // Log any rejected bookings
+        const rejectedBookings = result.data?.bookings.filter(b => 
+          b.status.toLowerCase().includes('reject')
+        )
+        if (rejectedBookings && rejectedBookings.length > 0) {
+          console.log("[v0] Rejected bookings found:", rejectedBookings.map(b => ({
+            id: b.id,
+            status: b.status,
+            can_resubmit: b.can_resubmit,
+            rejection_reason: b.rejection_reason
+          })))
+        } else {
+          console.log("[v0] No rejected bookings found")
+        }
       } catch (err) {
         console.error("Error loading dashboard:", err)
         setError("Failed to load dashboard data")
@@ -197,11 +218,17 @@ export default function UserDashboard() {
       case "active":
         return "bg-blue-500/20 text-blue-400 border-blue-500/30"
       case "pending":
+      case "pending details":
+      case "pending review":
+      case "documents submitted":
         return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
       case "completed":
         return "bg-gray-500/20 text-gray-400 border-gray-500/30"
       case "cancelled":
+      case "rejected":
         return "bg-red-500/20 text-red-400 border-red-500/30"
+      case "documents rejected":
+        return "bg-orange-500/20 text-orange-400 border-orange-500/30"
       default:
         return "bg-gray-500/20 text-gray-400 border-gray-500/30"
     }
@@ -418,47 +445,89 @@ export default function UserDashboard() {
               </div>
             ) : (
               <div className="grid gap-4">
-                {bookings.map((booking) => (
-                  <Link
-                    key={booking.id}
-                    href={`/my-bookings/${booking.id}`}
-                    className="bg-white/5 border border-white/10 rounded-xl p-6 hover:bg-white/10 hover:border-red-500/50 transition-all cursor-pointer active:scale-[0.98]"
-                  >
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      <div className="flex items-center gap-4">
-                        <div className="w-20 h-20 bg-white/5 rounded-lg flex items-center justify-center overflow-hidden">
-                          {booking.car_image ? (
-                            <Image
-                              src={booking.car_image || "/placeholder.svg"}
-                              alt={booking.car_name || ""}
-                              width={80}
-                              height={80}
-                              className="object-cover"
-                            />
-                          ) : (
-                            <Car className="w-8 h-8 text-gray-500" />
+                {bookings.map((booking) => {
+                  const statusLower = booking.status.toLowerCase()
+                  const isDocumentsRejected = statusLower === "documents rejected"
+                  const isPermanentlyRejected = statusLower === "rejected"
+                  const isRejected = isDocumentsRejected || isPermanentlyRejected
+                  // Can resubmit if status is "Documents Rejected" (not permanently "Rejected")
+                  // Also check can_resubmit field if it exists
+                  const canResubmit = isDocumentsRejected && booking.can_resubmit !== false
+                  
+                  return (
+                    <div key={booking.id} className={`bg-white/5 border rounded-xl overflow-hidden ${isRejected ? (canResubmit ? 'border-orange-500/50' : 'border-red-500/50') : 'border-white/10'}`}>
+                      {/* Rejection Alert Banner */}
+                      {isRejected && (
+                        <div className={`px-6 py-3 flex items-start gap-3 ${canResubmit ? 'bg-orange-500/10' : 'bg-red-500/10'}`}>
+                          <AlertTriangle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${canResubmit ? 'text-orange-400' : 'text-red-400'}`} />
+                          <div className="flex-1">
+                            <p className={`font-medium text-sm ${canResubmit ? 'text-orange-400' : 'text-red-400'}`}>
+                              {canResubmit ? 'Documents Need Attention - Please Re-upload' : 'Booking Permanently Rejected'}
+                            </p>
+                            <p className="text-gray-400 text-xs mt-1">
+                              {booking.rejection_reason || (canResubmit 
+                                ? 'Some of your documents were not accepted. Please upload clearer copies.' 
+                                : 'Your booking has been rejected and cannot be resubmitted. Please contact support for more information.')}
+                            </p>
+                            {booking.rejection_notes && (
+                              <p className="text-gray-500 text-xs mt-1 italic">
+                                Admin note: {booking.rejection_notes}
+                              </p>
+                            )}
+                          </div>
+                          {canResubmit && (
+                            <Link href={`/resubmit-documents/${booking.id}`}>
+                              <Button size="sm" className="bg-orange-500 hover:bg-orange-600 text-white text-xs whitespace-nowrap">
+                                <RotateCcw className="w-3 h-3 mr-1" />
+                                Re-upload Docs
+                              </Button>
+                            </Link>
                           )}
                         </div>
-                        <div>
-                          <h3 className="font-semibold text-white text-lg">
-                            {booking.car_brand} {booking.car_name}
-                          </h3>
-                          <p className="text-gray-400 text-sm">Booking ID: {booking.id.slice(0, 8)}...</p>
-                          <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
-                            <span>{booking.pickup_date}</span>
-                            <span>→</span>
-                            <span>{booking.dropoff_date}</span>
+                      )}
+                      
+                      {/* Booking Card Content */}
+                      <Link
+                        href={`/my-bookings/${booking.id}`}
+                        className="block p-6 hover:bg-white/5 transition-all cursor-pointer active:scale-[0.99]"
+                      >
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                          <div className="flex items-center gap-4">
+                            <div className="w-20 h-20 bg-white/5 rounded-lg flex items-center justify-center overflow-hidden">
+                              {booking.car_image ? (
+                                <Image
+                                  src={booking.car_image || "/placeholder.svg"}
+                                  alt={booking.car_name || ""}
+                                  width={80}
+                                  height={80}
+                                  className="object-cover"
+                                />
+                              ) : (
+                                <Car className="w-8 h-8 text-gray-500" />
+                              )}
+                            </div>
+                            <div>
+                              <h3 className="font-semibold text-white text-lg">
+                                {booking.car_brand} {booking.car_name}
+                              </h3>
+                              <p className="text-gray-400 text-sm">Booking ID: {booking.id.slice(0, 8)}...</p>
+                              <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                                <span>{booking.pickup_date}</span>
+                                <span>→</span>
+                                <span>{booking.dropoff_date}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <Badge className={getStatusColor(booking.status)}>{booking.status}</Badge>
+                            <p className="text-xl font-bold text-white">£{booking.total_amount.toFixed(2)}</p>
+                            <div className="text-xs text-gray-400">Click to view details</div>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-2">
-                        <Badge className={getStatusColor(booking.status)}>{booking.status}</Badge>
-                        <p className="text-xl font-bold text-white">£{booking.total_amount.toFixed(2)}</p>
-                        <div className="text-xs text-gray-400">Click to view details</div>
-                      </div>
+                      </Link>
                     </div>
-                  </Link>
-                ))}
+                  )
+                })}
               </div>
             )}
           </TabsContent>

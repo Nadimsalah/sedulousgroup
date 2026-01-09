@@ -245,6 +245,7 @@ export default function AdminBookingPage() {
                   <th className="text-left p-4 text-gray-400 font-medium">Vehicle</th>
                   <th className="text-left p-4 text-gray-400 font-medium">Dates</th>
                   <th className="text-left p-4 text-gray-400 font-medium">Amount</th>
+                  <th className="text-left p-4 text-gray-400 font-medium">Documents</th>
                   <th className="text-left p-4 text-gray-400 font-medium">Status</th>
                   <th className="text-left p-4 text-gray-400 font-medium">Actions</th>
                 </tr>
@@ -252,7 +253,7 @@ export default function AdminBookingPage() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center">
+                    <td colSpan={7} className="p-8 text-center">
                       <div className="flex justify-center">
                         <div className="w-8 h-8 border-4 border-zinc-700 border-t-red-500 rounded-full animate-spin"></div>
                       </div>
@@ -261,7 +262,7 @@ export default function AdminBookingPage() {
                   </tr>
                 ) : filteredBookings.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-gray-400">
+                    <td colSpan={7} className="p-8 text-center text-gray-400">
                       No bookings found
                     </td>
                   </tr>
@@ -296,6 +297,22 @@ export default function AdminBookingPage() {
                       </td>
                       <td className="p-4">
                         <p className="text-white font-bold">£{booking.total_amount?.toFixed(2)}</p>
+                      </td>
+                      <td className="p-4">
+                        {booking.documents_submitted_at ? (
+                          <span className="px-2 py-1 rounded-full text-xs font-semibold bg-green-500/20 text-green-400 flex items-center gap-1 w-fit">
+                            <CheckCircle className="h-3 w-3" />
+                            Submitted
+                          </span>
+                        ) : booking.driving_license_front_url ? (
+                          <span className="px-2 py-1 rounded-full text-xs font-semibold bg-yellow-500/20 text-yellow-400">
+                            Partial
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 rounded-full text-xs font-semibold bg-zinc-700 text-gray-400">
+                            Pending
+                          </span>
+                        )}
                       </td>
                       <td className="p-4">
                         <span
@@ -423,6 +440,101 @@ export default function AdminBookingPage() {
                   </span>
                 </div>
               </div>
+              {/* Documents Section */}
+              {(selectedBooking.driving_license_front_url || selectedBooking.ni_number) && (
+                <div className="pt-4 border-t border-zinc-800">
+                  <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-green-500" />
+                    Uploaded Documents
+                    {selectedBooking.documents_submitted_at && (
+                      <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded-full">
+                        Submitted
+                      </span>
+                    )}
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {selectedBooking.ni_number && (
+                      <div className="bg-zinc-800 p-3 rounded-lg">
+                        <Label className="text-gray-400 text-xs">NI Number</Label>
+                        <p className="text-white font-mono">{selectedBooking.ni_number}</p>
+                      </div>
+                    )}
+                    {selectedBooking.driving_license_number && (
+                      <div className="bg-zinc-800 p-3 rounded-lg">
+                        <Label className="text-gray-400 text-xs">License Number</Label>
+                        <p className="text-white font-mono">{selectedBooking.driving_license_number}</p>
+                      </div>
+                    )}
+                    {selectedBooking.driving_license_front_url && (
+                      <a 
+                        href={selectedBooking.driving_license_front_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="bg-zinc-800 p-3 rounded-lg hover:bg-zinc-700 transition-colors flex items-center gap-2"
+                      >
+                        <Eye className="h-4 w-4 text-blue-400" />
+                        <span className="text-blue-400 text-sm">License (Front)</span>
+                      </a>
+                    )}
+                    {selectedBooking.driving_license_back_url && (
+                      <a 
+                        href={selectedBooking.driving_license_back_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="bg-zinc-800 p-3 rounded-lg hover:bg-zinc-700 transition-colors flex items-center gap-2"
+                      >
+                        <Eye className="h-4 w-4 text-blue-400" />
+                        <span className="text-blue-400 text-sm">License (Back)</span>
+                      </a>
+                    )}
+                    {selectedBooking.proof_of_address_url && (
+                      <a 
+                        href={selectedBooking.proof_of_address_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="bg-zinc-800 p-3 rounded-lg hover:bg-zinc-700 transition-colors flex items-center gap-2"
+                      >
+                        <Eye className="h-4 w-4 text-blue-400" />
+                        <span className="text-blue-400 text-sm">Proof of Address</span>
+                      </a>
+                    )}
+                    {selectedBooking.bank_statement_url && (
+                      <a 
+                        href={selectedBooking.bank_statement_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="bg-zinc-800 p-3 rounded-lg hover:bg-zinc-700 transition-colors flex items-center gap-2"
+                      >
+                        <Eye className="h-4 w-4 text-blue-400" />
+                        <span className="text-blue-400 text-sm">Bank Statement</span>
+                      </a>
+                    )}
+                    {selectedBooking.private_hire_license_front_url && (
+                      <a 
+                        href={selectedBooking.private_hire_license_front_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="bg-zinc-800 p-3 rounded-lg hover:bg-zinc-700 transition-colors flex items-center gap-2"
+                      >
+                        <Eye className="h-4 w-4 text-blue-400" />
+                        <span className="text-blue-400 text-sm">Private Hire (Front)</span>
+                      </a>
+                    )}
+                    {selectedBooking.private_hire_license_back_url && (
+                      <a 
+                        href={selectedBooking.private_hire_license_back_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="bg-zinc-800 p-3 rounded-lg hover:bg-zinc-700 transition-colors flex items-center gap-2"
+                      >
+                        <Eye className="h-4 w-4 text-blue-400" />
+                        <span className="text-blue-400 text-sm">Private Hire (Back)</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-2 pt-4 border-t border-zinc-800">
                 <Button
                   onClick={() => {

@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useParams, useRouter } from "next/navigation"
-import { CheckCircle, Download, Car, ArrowRight, Loader2 } from "lucide-react"
+import { useState, useEffect, Suspense } from "react"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
+import { CheckCircle, Download, Car, ArrowRight, Loader2, Eye, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { getAgreementByIdAction } from "@/app/actions/agreements"
@@ -10,9 +10,10 @@ import { getBookingsAction, getCarsAction } from "@/app/actions/database"
 import Image from "next/image"
 import { toast } from "sonner"
 
-export default function AgreementSuccessPage() {
+function AgreementSuccessContent() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const agreementId = params.id as string
 
   const [agreement, setAgreement] = useState<any>(null)
@@ -20,12 +21,20 @@ export default function AgreementSuccessPage() {
   const [car, setCar] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [signedPdfUrl, setSignedPdfUrl] = useState<string | null>(null)
+  const [unsignedPdfUrl, setUnsignedPdfUrl] = useState<string | null>(null)
+  const [showPreview, setShowPreview] = useState(false)
 
   useEffect(() => {
     if (agreementId) {
+      // Check if signed PDF URL was passed via query param
+      const signedPdfParam = searchParams.get("signedPdf")
+      if (signedPdfParam) {
+        setSignedPdfUrl(decodeURIComponent(signedPdfParam))
+      }
+      
       loadData()
     }
-  }, [agreementId])
+  }, [agreementId, searchParams])
 
   // Poll for signed PDF URL if not available
   useEffect(() => {
@@ -72,6 +81,12 @@ export default function AgreementSuccessPage() {
       const pdfUrl = agreementData.signedAgreementUrl || agreementData.signed_agreement_url
       if (pdfUrl) {
         setSignedPdfUrl(pdfUrl)
+      }
+
+      // Load unsigned PDF for preview (same as signing page)
+      const unsignedUrl = agreementData.unsignedAgreementUrl || agreementData.unsigned_agreement_url
+      if (unsignedUrl) {
+        setUnsignedPdfUrl(unsignedUrl)
       }
 
       const [bookingsData, carsData] = await Promise.all([getBookingsAction(), getCarsAction()])
@@ -132,7 +147,7 @@ export default function AgreementSuccessPage() {
           </h1>
           <p className="text-xl text-zinc-300 mb-2">Enjoy your rental with</p>
           <div className="flex items-center justify-center gap-3 mb-4">
-            <Car className="h-8 w-8 text-red-500" />
+            <Car className="h-8 w-8 text-red-500 font-light" />
             <h2 className="text-2xl md:text-3xl font-bold text-red-500">
               {car.brand} {car.name}
             </h2>
@@ -188,6 +203,45 @@ export default function AgreementSuccessPage() {
           </div>
         </div>
 
+        {/* Preview Agreement Button */}
+        {(unsignedPdfUrl || signedPdfUrl) && (
+          <div className="mb-6">
+            <Button
+              onClick={() => setShowPreview(true)}
+              variant="outline"
+              className="w-full border-white/20 text-white hover:bg-white/10"
+            >
+              <Eye className="h-4 w-4 mr-2" />
+              {signedPdfUrl ? "Preview Signed Agreement" : "Preview Agreement"}
+            </Button>
+          </div>
+        )}
+
+        {/* Preview Modal */}
+        {showPreview && (unsignedPdfUrl || signedPdfUrl) && (
+          <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
+            <div className="bg-black border border-white/10 rounded-xl p-6 max-w-4xl w-full max-h-[90vh] overflow-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-white">
+                  {signedPdfUrl ? "Signed Agreement Preview" : "Agreement Preview"}
+                </h2>
+                <Button
+                  onClick={() => setShowPreview(false)}
+                  variant="ghost"
+                  className="text-white hover:bg-white/10"
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+              <iframe
+                src={signedPdfUrl || unsignedPdfUrl || ""}
+                className="w-full h-[80vh] border border-white/10 rounded-lg"
+                title={signedPdfUrl ? "Signed Agreement Preview" : "Agreement Preview"}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Download PDF Button */}
         {signedPdfUrl ? (
           <div className="space-y-4">
@@ -210,19 +264,52 @@ export default function AgreementSuccessPage() {
             </Button>
           </div>
         ) : (
-          <div className="text-center">
-            <Loader2 className="h-8 w-8 animate-spin text-yellow-400 mx-auto mb-4" />
-            <p className="text-yellow-400 mb-4">PDF is being generated... Please wait a moment.</p>
-            <Button
-              onClick={loadData}
-              variant="outline"
-              className="border-zinc-700 text-white hover:bg-zinc-800"
-            >
-              Refresh Status
-            </Button>
+          <div className="space-y-4">
+            {/* Show unsigned PDF download if available while waiting for signed PDF */}
+            {unsignedPdfUrl && (
+              <a href={unsignedPdfUrl} target="_blank" rel="noopener noreferrer" className="block">
+                <Button
+                  variant="outline"
+                  className="w-full border-white/20 text-white hover:bg-white/10 h-12"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download Agreement (Unsigned)
+                </Button>
+              </a>
+            )}
+            
+            <div className="text-center">
+              <Loader2 className="h-8 w-8 animate-spin text-yellow-400 mx-auto mb-4" />
+              <p className="text-yellow-400 mb-4">Signed PDF is being generated... Please wait a moment.</p>
+              <p className="text-zinc-400 text-sm mb-4">
+                Your agreement has been signed successfully. The signed PDF will be available shortly.
+              </p>
+              <Button
+                onClick={loadData}
+                variant="outline"
+                className="border-zinc-700 text-white hover:bg-zinc-800"
+              >
+                Refresh Status
+              </Button>
+            </div>
           </div>
         )}
       </Card>
     </div>
+  )
+}
+
+export default function AgreementSuccessPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-red-500 mx-auto mb-4" />
+          <p className="text-white/70">Loading...</p>
+        </div>
+      </div>
+    }>
+      <AgreementSuccessContent />
+    </Suspense>
   )
 }

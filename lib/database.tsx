@@ -135,6 +135,7 @@ export interface Agreement {
   mediaUrls?: string[] // Added for media URLs
   fuelLevel?: string // Added for fuel level
   odometerReading?: number // Added for odometer reading
+  vehiclePhotos?: string[] // Car condition photos taken at handover
 }
 
 export interface VehicleInspection {
@@ -1539,7 +1540,7 @@ class Database {
     return this.mapAgreementFromDb(data)
   }
 
-  async updateAgreement(id: string, updates: Partial<Agreement>): Promise<Agreement | null> {
+  async updateAgreement(id: string, updates: Partial<Agreement> & { vehicle_photos?: string[] }): Promise<Agreement | null> {
     const supabase = await this.getAdminClient()
     if (!supabase) return null
 
@@ -1553,6 +1554,8 @@ class Database {
     if (updates.mediaUrls) updateData.media_urls = updates.mediaUrls // Added media URLs update
     if (updates.fuelLevel) updateData.fuel_level = updates.fuelLevel // Added fuel level update
     if (updates.odometerReading !== undefined) updateData.odometer_reading = updates.odometerReading // Added odometer reading update
+    if (updates.vehiclePhotos) updateData.vehicle_photos = updates.vehiclePhotos // Vehicle photos from handover
+    if ((updates as any).vehicle_photos) updateData.vehicle_photos = (updates as any).vehicle_photos // Also handle snake_case
 
     const { data, error } = await supabase.from("agreements").update(updateData).eq("id", id).select().single()
 
@@ -1675,6 +1678,7 @@ class Database {
       signed_at: new Date().toISOString(),
       status: "pending", // Will be updated to "signed" when PDF is generated
       updated_at: new Date().toISOString(),
+      customer_name_signed: customerName, // Store the customer name who signed
     }
 
     // Store customer signature - ALWAYS prefer base64 if available (same as admin flow)
@@ -1707,16 +1711,19 @@ class Database {
       storingAsBase64: !!signatureBase64
     })
 
-    const { error } = await supabase
+    const { error, data } = await supabase
       .from("agreements")
       .update(updateData)
       .eq("id", agreementId)
+      .select()
 
     if (error) {
-      console.error("[v0] Error updating agreement signature:", error)
+      console.error("[Database] Error updating agreement signature:", error)
+      console.error("[Database] Update data:", JSON.stringify(updateData, null, 2))
       return false
     }
 
+    console.log("[Database] Agreement signature updated successfully:", data?.[0]?.id)
     return true
   }
 
@@ -1959,7 +1966,49 @@ class Database {
     return this.mapPCNFromDb(data)
   }
 
-  async getPCNsByAgreementId(agreementId: string): Promise<PCNTicket[]> {
+  // Get all PCN tickets (no pagination - like deposits page)
+  async getAllPCNTickets(filters?: { status?: string; searchTerm?: string }): Promise<PCNTicket[]> {
+    const supabase = await this.getAdminClient()
+    if (!supabase) {
+      console.error("[Database] No admin client available for fetching PCN tickets")
+      return []
+    }
+
+    let query = supabase
+      .from("pcn_tickets")
+      .select("id, agreement_id, booking_id, customer_id, vehicle_id, ticket_type, ticket_number, issue_date, due_date, amount, status, paid_by, paid_at, ticket_document_url, proof_of_payment_url, sent_to_customer_at, customer_notified, notes, created_at, updated_at, uploaded_by")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+
+    // Apply filters
+    if (filters?.status) {
+      query = query.eq("status", filters.status)
+    }
+
+    // Apply search
+    if (filters?.searchTerm) {
+      query = query.or(`ticket_number.ilike.%${filters.searchTerm}%,notes.ilike.%${filters.searchTerm}%`)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      console.error("[Database] Error fetching all PCN tickets:", error)
+      return []
+    }
+
+    console.log(`[Database] Found ${data?.length || 0} PCN tickets`)
+    return (data || []).map((ticket) => {
+      try {
+        return this.mapPCNFromDb(ticket)
+      } catch (err) {
+        console.error("[Database] Error mapping PCN ticket:", err, ticket)
+        return null
+      }
+    }).filter((ticket): ticket is PCNTicket => ticket !== null)
+  }
+
+  async getPCNsByAgreementId(agreementId: string, limit?: number): Promise<PCNTicket[]> {
     const supabase = await this.getAdminClient()
     if (!supabase) {
       console.error("[Database] No admin client available for fetching PCN tickets")
@@ -1971,13 +2020,20 @@ class Database {
       return []
     }
 
-    console.log("[Database] Fetching PCN tickets for agreement:", agreementId)
+    console.log("[Database] Fetching PCN tickets for agreement:", agreementId, limit ? `(limit: ${limit})` : "")
 
-    const { data, error } = await supabase
+    let query = supabase
       .from("pcn_tickets")
       .select("*")
       .eq("agreement_id", agreementId)
       .order("created_at", { ascending: false })
+
+    // Apply limit if provided
+    if (limit) {
+      query = query.limit(limit)
+    }
+
+    const { data, error } = await query
 
     if (error) {
       console.error("[Database] Error fetching PCN tickets:", error)
@@ -1997,6 +2053,193 @@ class Database {
         return null
       }
     }).filter((ticket): ticket is PCNTicket => ticket !== null)
+  }
+
+  // Cursor pagination helper: encode cursor from ticket
+  private encodeCursor(createdAt: string, id: string): string {
+    return Buffer.from(`${createdAt}|${id}`).toString("base64")
+  }
+
+  // Cursor pagination helper: decode cursor to createdAt and id
+  private decodeCursor(cursor: string): { createdAt: string; id: string } | null {
+    try {
+      const decoded = Buffer.from(cursor, "base64").toString("utf-8")
+      const [createdAt, id] = decoded.split("|")
+      if (!createdAt || !id) return null
+      return { createdAt, id }
+    } catch {
+      return null
+    }
+  }
+
+  // Get all PCN tickets with cursor pagination (for list view)
+  async getAllPCNTicketsPaginated(
+    limit: number = 5,
+    cursor?: string,
+    filters?: { status?: string; searchTerm?: string }
+  ): Promise<{ items: PCNTicket[]; nextCursor: string | null; hasMore: boolean }> {
+    const supabase = await this.getAdminClient()
+    if (!supabase) {
+      console.error("[Database] No admin client available for fetching PCN tickets")
+      return { items: [], nextCursor: null, hasMore: false }
+    }
+
+    // Clamp limit between 1 and 50
+    const clampedLimit = Math.min(Math.max(limit, 1), 50)
+    // Fetch one extra to check if there's more
+    const fetchLimit = clampedLimit + 1
+
+    let query = supabase
+      .from("pcn_tickets")
+      .select("id, agreement_id, booking_id, customer_id, vehicle_id, ticket_type, ticket_number, issue_date, due_date, amount, status, paid_by, paid_at, ticket_document_url, proof_of_payment_url, sent_to_customer_at, customer_notified, notes, created_at, updated_at, uploaded_by")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+
+    // Apply cursor if provided
+    if (cursor) {
+      const decoded = this.decodeCursor(cursor)
+      if (decoded) {
+        // For cursor pagination with DESC order:
+        // We want tickets where created_at < cursor.createdAt OR (created_at = cursor.createdAt AND id < cursor.id)
+        // Since Supabase doesn't support complex OR easily, we use:
+        // created_at <= cursor.createdAt AND (created_at < cursor.createdAt OR id < cursor.id)
+        // But simpler: created_at < cursor.createdAt OR (created_at = cursor.createdAt AND id < cursor.id)
+        // Actually, we can use: created_at.lte.${decoded.createdAt} and then filter in memory for exact matches
+        // Or better: use two queries or use a simpler approach
+        // For now, use: created_at <= decoded.createdAt, then filter
+        query = query.lte("created_at", decoded.createdAt)
+        // We'll need to filter further in code for exact created_at matches
+      }
+    }
+
+    // Apply filters
+    if (filters?.status) {
+      query = query.eq("status", filters.status)
+    }
+
+    // Apply search (if needed, search in ticket_number or notes)
+    if (filters?.searchTerm) {
+      query = query.or(`ticket_number.ilike.%${filters.searchTerm}%,notes.ilike.%${filters.searchTerm}%`)
+    }
+
+    // Fetch limit + 1 to check if there's more
+    const { data, error } = await query.limit(fetchLimit)
+
+    if (error) {
+      console.error("[Database] Error fetching paginated PCN tickets:", error)
+      return { items: [], nextCursor: null, hasMore: false }
+    }
+
+    let allItems = data || []
+    
+    // If cursor exists, filter out items that should be before the cursor
+    if (cursor) {
+      const decoded = this.decodeCursor(cursor)
+      if (decoded) {
+        allItems = allItems.filter((item) => {
+          const itemCreatedAt = item.created_at
+          const itemId = item.id
+          // Keep items where: created_at < cursor.createdAt OR (created_at = cursor.createdAt AND id < cursor.id)
+          if (itemCreatedAt < decoded.createdAt) {
+            return true
+          }
+          if (itemCreatedAt === decoded.createdAt && itemId < decoded.id) {
+            return true
+          }
+          return false
+        })
+      }
+    }
+    
+    // Sort to ensure correct order (created_at DESC, id DESC)
+    allItems.sort((a, b) => {
+      const dateA = new Date(a.created_at).getTime()
+      const dateB = new Date(b.created_at).getTime()
+      if (dateB !== dateA) {
+        return dateB - dateA // DESC
+      }
+      return b.id.localeCompare(a.id) // DESC by id
+    })
+    
+    const hasMore = allItems.length > clampedLimit
+    const items = hasMore ? allItems.slice(0, clampedLimit) : allItems
+
+    // Map to PCNTicket objects
+    const mappedItems = items
+      .map((ticket) => {
+        try {
+          return this.mapPCNFromDb(ticket)
+        } catch (err) {
+          console.error("[Database] Error mapping PCN ticket:", err, ticket)
+          return null
+        }
+      })
+      .filter((ticket): ticket is PCNTicket => ticket !== null)
+
+    // Generate next cursor from last item
+    let nextCursor: string | null = null
+    if (hasMore && mappedItems.length > 0) {
+      const lastItem = mappedItems[mappedItems.length - 1]
+      nextCursor = this.encodeCursor(lastItem.createdAt, lastItem.id)
+    }
+
+    console.log(
+      `[Database] Paginated PCN tickets: fetched ${mappedItems.length}, hasMore: ${hasMore}, nextCursor: ${nextCursor ? "yes" : "no"}`
+    )
+
+    return {
+      items: mappedItems,
+      nextCursor,
+      hasMore,
+    }
+  }
+
+  // Batch method to get tickets for multiple agreements (performance optimization)
+  async getPCNsByAgreementIds(agreementIds: string[]): Promise<Record<string, PCNTicket[]>> {
+    const supabase = await this.getAdminClient()
+    if (!supabase) {
+      console.error("[Database] No admin client available for fetching PCN tickets")
+      return {}
+    }
+
+    if (!agreementIds || agreementIds.length === 0) {
+      return {}
+    }
+
+    console.log(`[Database] Batch fetching PCN tickets for ${agreementIds.length} agreements`)
+
+    const { data, error } = await supabase
+      .from("pcn_tickets")
+      .select("*")
+      .in("agreement_id", agreementIds)
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      console.error("[Database] Error batch fetching PCN tickets:", error)
+      return {}
+    }
+
+    // Group tickets by agreement_id
+    const ticketsByAgreement: Record<string, PCNTicket[]> = {}
+    agreementIds.forEach((id) => {
+      ticketsByAgreement[id] = []
+    })
+
+    ;(data || []).forEach((ticket) => {
+      try {
+        const mapped = this.mapPCNFromDb(ticket)
+        const agreementId = ticket.agreement_id
+        if (!ticketsByAgreement[agreementId]) {
+          ticketsByAgreement[agreementId] = []
+        }
+        ticketsByAgreement[agreementId].push(mapped)
+      } catch (err) {
+        console.error("[Database] Error mapping PCN ticket:", err, ticket)
+      }
+    })
+
+    console.log(`[Database] Batch found ${data?.length || 0} PCN tickets across ${agreementIds.length} agreements`)
+    return ticketsByAgreement
   }
 
   async updatePCNTicket(id: string, updates: Partial<PCNTicket>): Promise<PCNTicket | null> {
@@ -2234,6 +2477,7 @@ class Database {
       mediaUrls: data.media_urls, // Map media URLs
       fuelLevel: data.fuel_level, // Map fuel level
       odometerReading: data.odometer_reading, // Map odometer reading
+      vehiclePhotos: data.vehicle_photos, // Map vehicle photos (car condition at handover)
     }
   }
 

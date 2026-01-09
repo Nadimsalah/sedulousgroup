@@ -3,9 +3,11 @@
 import type React from "react"
 import { useState, useEffect, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { ArrowLeft, Loader2, XCircle, Download, CheckCircle } from "lucide-react"
+import { ArrowLeft, Loader2, XCircle, Download, CheckCircle, Camera, X } from "lucide-react"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
-import { createClient } from "@/lib/supabase/client"
+import { Label } from "@/components/ui/label"
+import SignatureCanvas from "react-signature-canvas"
 
 interface BookingData {
   booking: any
@@ -16,25 +18,15 @@ export default function BookingDetailsPage() {
   const params = useParams()
   const router = useRouter()
   const bookingId = params.bookingId as string
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const signaturePadRef = useRef<any>(null)
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<BookingData | null>(null)
   const [currentStep, setCurrentStep] = useState(0)
   const [isSigningLoading, setIsSigningLoading] = useState(false)
-  const [isDrawing, setIsDrawing] = useState(false)
-
-  useEffect(() => {
-    if (currentStep === 1 && canvasRef.current) {
-      const canvas = canvasRef.current
-      const ctx = canvas.getContext("2d")
-      if (ctx) {
-        ctx.fillStyle = "rgb(30, 30, 30)"
-        ctx.fillRect(0, 0, canvas.width, canvas.height)
-      }
-    }
-  }, [currentStep])
+  const [customerSignature, setCustomerSignature] = useState("")
+  const [selectedImage, setSelectedImage] = useState<string | null>(null)
 
   useEffect(() => {
     loadBookingDetails()
@@ -61,6 +53,16 @@ export default function BookingDetailsPage() {
         throw new Error("Booking not found")
       }
 
+      // Debug: log agreement data including vehicle photos
+      if (result.agreement) {
+        console.log("[v0] Agreement loaded:", {
+          id: result.agreement.id,
+          status: result.agreement.status,
+          vehicle_photos: result.agreement.vehicle_photos?.length || 0,
+          vehiclePhotos: result.agreement.vehiclePhotos?.length || 0,
+        })
+      }
+      
       setData({ booking: result.booking, agreement: result.agreement || null })
 
       if (result.agreement?.signed_agreement_url) {
@@ -74,101 +76,34 @@ export default function BookingDetailsPage() {
     }
   }
 
-  const getCoordinates = (e: React.MouseEvent | React.TouchEvent, canvas: HTMLCanvasElement) => {
-    const rect = canvas.getBoundingClientRect()
-    if ("touches" in e) {
-      return {
-        x: e.touches[0].clientX - rect.left,
-        y: e.touches[0].clientY - rect.top,
-      }
-    }
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    }
-  }
-
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    e.preventDefault()
-    setIsDrawing(true)
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-
-    const { x, y } = getCoordinates(e, canvas)
-    ctx.beginPath()
-    ctx.moveTo(x, y)
-  }
-
-  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    e.preventDefault()
-    if (!isDrawing) return
-
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-
-    ctx.strokeStyle = "#ef4444"
-    ctx.lineWidth = 3
-    ctx.lineCap = "round"
-    ctx.lineJoin = "round"
-
-    const { x, y } = getCoordinates(e, canvas)
-    ctx.lineTo(x, y)
-    ctx.stroke()
-  }
-
-  const stopDrawing = () => {
-    setIsDrawing(false)
-  }
-
-  const clearSignature = () => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-
-    ctx.fillStyle = "rgb(30, 30, 30)"
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-  }
-
   const handleSignAgreement = async () => {
-    if (!canvasRef.current || !data?.booking || !data?.agreement?.id) {
+    if (!data?.booking || !data?.agreement?.id) {
       alert("Agreement not found. Please contact support.")
+      return
+    }
+
+    if (!customerSignature) {
+      alert("Please draw and confirm your signature first")
       return
     }
 
     try {
       setIsSigningLoading(true)
-      const signatureDataUrl = canvasRef.current.toDataURL()
 
-      const supabase = createClient()
-      if (!supabase) throw new Error("Failed to initialize")
+      // Update agreement status to "signed" with signature
+      const updateResponse = await fetch(`/api/agreements/${data.agreement.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "signed",
+          signed_at: new Date().toISOString(),
+          customer_signature_data: customerSignature,
+        }),
+      })
 
-      const blob = await (await fetch(signatureDataUrl)).blob()
-      const fileName = `signatures/${bookingId}-${Date.now()}.png`
-
-      const { error: uploadError } = await supabase.storage
-        .from("rental-contracts")
-        .upload(fileName, blob, { upsert: true })
-
-      if (uploadError) {
-        console.log("Upload error, trying to continue:", uploadError.message)
-      }
-
-      const { data: signedUrl } = supabase.storage.from("rental-contracts").getPublicUrl(fileName)
-
-      // Use server action to sign agreement
-      const { signAgreement } = await import("@/app/actions/booking-details")
-      const result = await signAgreement(bookingId, signedUrl.publicUrl, data.agreement.id)
-
-      if (result.error) {
-        throw new Error(result.error)
+      if (!updateResponse.ok) {
+        const errorData = await updateResponse.json().catch(() => ({}))
+        throw new Error(errorData.error || "Failed to sign agreement")
       }
 
       // Generate signed PDF after signing
@@ -179,18 +114,16 @@ export default function BookingDetailsPage() {
         
         if (!pdfResult.success) {
           console.error("[v0] PDF generation failed:", pdfResult.error)
-          // Show error but continue - signature was saved, PDF can be generated later
           alert(`Agreement signed successfully, but PDF generation failed: ${pdfResult.error}. You can generate it from the success page.`)
         } else {
           console.log("[v0] PDF generated successfully:", pdfResult.signedPdfUrl?.substring(0, 100))
         }
       } catch (pdfError: any) {
         console.error("[v0] Error generating signed PDF:", pdfError)
-        // Show error but continue - signature was saved
         alert(`Agreement signed successfully, but PDF generation had an error: ${pdfError.message || "Unknown error"}. You can generate it from the success page.`)
       }
 
-      // Redirect to success page (PDF generation will continue there if needed)
+      // Redirect to success page
       router.push(`/agreement/success/${data.agreement.id}`)
     } catch (err: any) {
       console.error("[v0] Error signing agreement:", err)
@@ -348,9 +281,9 @@ export default function BookingDetailsPage() {
 
           {!agreement ? (
             <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-6 text-center">
-              <p className="text-yellow-400 font-semibold mb-2">No Agreement Yet</p>
+              <p className="text-yellow-400 font-semibold mb-2">Agreement Pending</p>
               <p className="text-white/70 text-sm">
-                Your rental agreement will be created and sent to you once your booking is confirmed by our team.
+                We are currently reviewing your documents. Please wait while our team processes your submission. Once approved, your rental agreement will be sent to you via email.
               </p>
             </div>
           ) : (
@@ -395,6 +328,86 @@ export default function BookingDetailsPage() {
                   </div>
                 )}
 
+                {/* Vehicle Photos Section */}
+                <div className="bg-black/50 rounded-xl p-4 border border-white/10 mb-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Camera className="h-5 w-5 text-red-500" />
+                    <h4 className="text-white font-semibold">Vehicle Condition Photos</h4>
+                    {((agreement.vehicle_photos && agreement.vehicle_photos.length > 0) || 
+                      (agreement.vehiclePhotos && agreement.vehiclePhotos.length > 0)) && (
+                      <span className="text-white/50 text-sm">
+                        ({(agreement.vehicle_photos || agreement.vehiclePhotos || []).length} photos)
+                      </span>
+                    )}
+                  </div>
+                  
+                  {((agreement.vehicle_photos && agreement.vehicle_photos.length > 0) || 
+                    (agreement.vehiclePhotos && agreement.vehiclePhotos.length > 0)) ? (
+                    <>
+                      <p className="text-white/60 text-sm mb-4">
+                        Please review the vehicle condition photos taken at pickup. These document the vehicle&apos;s state before your rental.
+                      </p>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {(agreement.vehicle_photos || agreement.vehiclePhotos || []).map((photoUrl: string, index: number) => (
+                          <div 
+                            key={index} 
+                            className="relative aspect-square rounded-lg overflow-hidden border border-white/10 cursor-pointer hover:border-red-500 transition-colors group"
+                            onClick={() => setSelectedImage(photoUrl)}
+                          >
+                            <Image
+                              src={photoUrl}
+                              alt={`Vehicle photo ${index + 1}`}
+                              fill
+                              className="object-cover group-hover:scale-105 transition-transform"
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                              <span className="text-white opacity-0 group-hover:opacity-100 text-sm font-medium">View</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-white/50 text-sm">
+                      No vehicle photos have been uploaded yet. Photos will appear here once the admin uploads them during vehicle handover.
+                    </p>
+                  )}
+                </div>
+
+                {/* Image Preview Modal */}
+                {selectedImage && (
+                  <div 
+                    className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center p-4 cursor-pointer"
+                    onClick={() => setSelectedImage(null)}
+                  >
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSelectedImage(null)
+                      }}
+                      className="absolute top-4 right-4 z-[10000] text-white hover:text-red-400 p-3 rounded-full bg-white/20 hover:bg-white/30 transition-colors pointer-events-auto"
+                    >
+                      <X className="h-8 w-8" />
+                    </button>
+                    <div 
+                      className="relative max-w-4xl max-h-[85vh] w-full h-full pointer-events-none"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Image
+                        src={selectedImage}
+                        alt="Vehicle photo preview"
+                        fill
+                        className="object-contain pointer-events-auto"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white/70 text-sm bg-black/50 px-4 py-2 rounded-full">
+                      Click anywhere or ✕ to close
+                    </div>
+                  </div>
+                )}
+
                 {currentStep === 0 && !hasSigned && (
                   <Button onClick={() => setCurrentStep(1)} className="w-full bg-red-500 hover:bg-red-600">
                     I Have Read and Agree
@@ -415,37 +428,66 @@ export default function BookingDetailsPage() {
                   </div>
 
                   {!hasSigned && (
-                    <div className="bg-black/50 rounded-xl p-4 border border-white/10">
-                      <p className="text-white/70 text-sm mb-3">Draw your signature below:</p>
-                      <canvas
-                        ref={canvasRef}
-                        width={600}
-                        height={150}
-                        className="w-full border-2 border-dashed border-white/20 rounded-lg bg-black/80 cursor-crosshair mb-4 touch-none"
-                        onMouseDown={startDrawing}
-                        onMouseMove={draw}
-                        onMouseUp={stopDrawing}
-                        onMouseLeave={stopDrawing}
-                        onTouchStart={startDrawing}
-                        onTouchMove={draw}
-                        onTouchEnd={stopDrawing}
-                      />
-                      <div className="flex gap-3">
-                        <Button
-                          onClick={clearSignature}
-                          variant="outline"
-                          className="flex-1 border-white/20 text-white hover:bg-white/10 bg-transparent"
-                        >
-                          Clear
-                        </Button>
-                        <Button
-                          onClick={handleSignAgreement}
-                          disabled={isSigningLoading || !agreement?.id}
-                          className="flex-1 bg-red-500 hover:bg-red-600"
-                        >
-                          {isSigningLoading ? "Signing..." : "Sign Contract"}
-                        </Button>
+                    <div className="bg-black/50 rounded-xl p-4 border border-white/10 space-y-4">
+                      <div className="space-y-3">
+                        <Label className="text-white">Your Signature *</Label>
+                        <div className="border-2 border-zinc-700 rounded-lg bg-white p-2 overflow-x-auto">
+                          <SignatureCanvas
+                            ref={signaturePadRef}
+                            canvasProps={{ width: 500, height: 150, className: "border border-gray-300 rounded" }}
+                            backgroundColor="#ffffff"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            onClick={() => signaturePadRef.current?.clear()}
+                            variant="outline"
+                            className="flex-1 bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700"
+                          >
+                            Clear Signature
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              if (signaturePadRef.current && !signaturePadRef.current.isEmpty()) {
+                                const signatureData = signaturePadRef.current.toDataURL()
+                                setCustomerSignature(signatureData)
+                                alert("Signature confirmed!")
+                              } else {
+                                alert("Please draw your signature first")
+                              }
+                            }}
+                            className="flex-1 bg-green-600 hover:bg-green-700"
+                          >
+                            Confirm Signature
+                          </Button>
+                        </div>
                       </div>
+
+                      {customerSignature && (
+                        <div className="p-3 bg-green-900/20 border border-green-800 rounded-lg text-green-400 text-sm">
+                          ✓ Signature captured
+                        </div>
+                      )}
+
+                      <Button
+                        onClick={handleSignAgreement}
+                        disabled={isSigningLoading || !agreement?.id || !customerSignature}
+                        className="w-full bg-red-500 hover:bg-red-600 text-white h-12 text-base font-semibold disabled:opacity-50"
+                      >
+                        {isSigningLoading ? (
+                          <>
+                            <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                            Signing Agreement...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle className="h-5 w-5 mr-2" />
+                            Sign Agreement
+                          </>
+                        )}
+                      </Button>
                     </div>
                   )}
 

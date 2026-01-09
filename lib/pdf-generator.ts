@@ -476,20 +476,21 @@ export async function generateRentalAgreementPDF(
   })
 
   // SIGNATURES SECTION
-  checkNewPage(50)
+  checkNewPage(60)
   yPosition += 10
 
   // Signature table
   const sigTableY = yPosition
-  const sigColWidth = 80
-  const sigRowHeight = 30
+  const sigColWidth = 85
+  const sigRowHeight = 45 // Increased height for better signature display
 
   // Draw signature table borders
   doc.setDrawColor(200, 200, 200)
+  doc.setLineWidth(0.5)
   doc.rect(margin, sigTableY, sigColWidth, sigRowHeight)
   doc.rect(margin + sigColWidth, sigTableY, sigColWidth, sigRowHeight)
 
-  // Labels
+  // Labels - at the top of each box
   doc.setFontSize(10)
   doc.setFont("helvetica", "bold")
   doc.setTextColor(0, 0, 0)
@@ -498,59 +499,99 @@ export async function generateRentalAgreementPDF(
     align: "center",
   })
 
-  // Add signature images if available
-  let signatureY = sigTableY + 12
+  // Signature area starts after the label
+  const signatureStartY = sigTableY + 10
+  const signatureMaxHeight = 22 // Max height for signature image
 
   // Customer signature (Client Signature) - LEFT SIDE
-  console.log("[PDF] Checking customer signature:", data.customer_signature ? `Present (${data.customer_signature.substring(0, 50)}...)` : "Missing")
-  if (data.customer_signature) {
+  const hasCustomerSignature = data.customer_signature && data.customer_signature.trim().length > 0
+  console.log("[PDF] Checking customer signature:", hasCustomerSignature ? `Present (${data.customer_signature.substring(0, 50)}...)` : "Missing")
+  
+  if (hasCustomerSignature) {
     try {
       console.log("[PDF] Loading customer signature from:", data.customer_signature.substring(0, 100))
+      
+      // Validate signature format
+      if (!data.customer_signature.startsWith('data:image') && !data.customer_signature.startsWith('http')) {
+        throw new Error(`Invalid signature format. Expected data:image or http URL, got: ${data.customer_signature.substring(0, 50)}`)
+      }
       
       // If it's already a base64 data URL, use it directly without fetch
       let customerSigData: { dataUrl: string; width: number; height: number }
       
       if (data.customer_signature.startsWith('data:image')) {
         console.log("[PDF] Signature is base64 data URL, using directly")
+        
+        // Validate base64 data URL format
+        if (!data.customer_signature.includes(',')) {
+          throw new Error("Invalid base64 data URL format: missing comma separator")
+        }
+        
         // Get dimensions from the image
         if (typeof window !== 'undefined' && typeof window.Image !== 'undefined') {
           customerSigData = await new Promise((resolve, reject) => {
             const img = new window.Image()
+            const timeout = setTimeout(() => {
+              reject(new Error("Timeout loading signature image"))
+            }, 5000)
+            
             img.onload = () => {
+              clearTimeout(timeout)
+              console.log("[PDF] Base64 signature image loaded, dimensions:", img.width, "x", img.height)
               resolve({ dataUrl: data.customer_signature!, width: img.width, height: img.height })
             }
-            img.onerror = () => {
-              // Fallback to default dimensions
+            img.onerror = (err) => {
+              clearTimeout(timeout)
+              console.warn("[PDF] Could not load base64 image for dimensions, using defaults")
+              // Still use the base64 data even if we can't get dimensions
               resolve({ dataUrl: data.customer_signature!, width: 200, height: 200 })
             }
             img.src = data.customer_signature
           })
         } else {
+          // Server-side: use default dimensions
           customerSigData = { dataUrl: data.customer_signature, width: 200, height: 200 }
         }
       } else {
         // It's a URL, use loadImage
+        console.log("[PDF] Signature is URL, loading via loadImage...")
         customerSigData = await loadImage(data.customer_signature)
       }
       
-      console.log("[PDF] Customer signature image loaded successfully, dimensions:", customerSigData.width, "x", customerSigData.height)
-      const sigWidth = 60
-      const sigHeight = (customerSigData.height / customerSigData.width) * sigWidth
-      const adjustedHeight = Math.min(sigHeight, 20) // Increased max height
-      const sigX = margin + 10
-      const sigY = signatureY
+      if (!customerSigData || !customerSigData.dataUrl) {
+        throw new Error("Failed to load signature: empty data returned")
+      }
       
-      // Use base64 data URL directly
-      doc.addImage(customerSigData.dataUrl, "PNG", sigX, sigY, sigWidth, adjustedHeight)
-      console.log("[PDF] ✓ Customer signature added to PDF at position:", sigX, sigY, "Size:", sigWidth, "x", adjustedHeight)
+      console.log("[PDF] Customer signature image loaded successfully, dimensions:", customerSigData.width, "x", customerSigData.height)
+      
+      // FIXED signature dimensions - same as admin signature
+      const fixedSigWidth = 55 // Fixed width in mm
+      const fixedSigHeight = 15 // Fixed height in mm
+      
+      // FIXED X position - centered in left box with equal margins
+      // Left box: from margin (12.7mm) to margin+sigColWidth (97.7mm)
+      // Center signature horizontally in the box
+      const sigX = margin + (sigColWidth - fixedSigWidth) / 2
+      
+      // FIXED Y position - inside box, above Date line
+      // signatureStartY is 10mm from box top
+      // Place signature at signatureStartY + 4mm for proper spacing
+      const sigY = signatureStartY + 4
+      
+      // Use base64 data URL directly with FIXED dimensions
+      doc.addImage(customerSigData.dataUrl, "PNG", sigX, sigY, fixedSigWidth, fixedSigHeight)
+      console.log("[PDF] ✓ Customer signature added to PDF at FIXED position:", sigX, sigY, "Size:", fixedSigWidth, "x", fixedSigHeight)
     } catch (err) {
-      console.error("[PDF] ✗ Could not load customer signature:", err)
-      console.error("[PDF] Error details:", err instanceof Error ? err.message : String(err))
-      console.error("[PDF] Signature URL was:", data.customer_signature?.substring(0, 200))
-      // Draw a line for signature if image fails
+      const errorMessage = err instanceof Error ? err.message : String(err) || "Unknown error"
+      console.error("[PDF] ✗ Could not load customer signature:", errorMessage)
+      console.error("[PDF] Error details:", err)
+      console.error("[PDF] Signature value was:", data.customer_signature ? `${data.customer_signature.substring(0, 200)}... (length: ${data.customer_signature.length})` : "undefined or null")
+      
+      // Don't throw - instead draw a line and let the PDF generate without signature
+      console.warn("[PDF] Continuing PDF generation without signature image")
       doc.setDrawColor(150, 150, 150)
       doc.setLineWidth(0.5)
-      doc.line(margin + 10, signatureY + 5, margin + 70, signatureY + 5)
+      doc.line(margin + 10, signatureStartY + signatureMaxHeight / 2, margin + sigColWidth - 10, signatureStartY + signatureMaxHeight / 2)
       console.log("[PDF] Drew signature line as fallback")
     }
   } else {
@@ -558,7 +599,7 @@ export async function generateRentalAgreementPDF(
     // Draw a line for signature if not provided
     doc.setDrawColor(150, 150, 150)
     doc.setLineWidth(0.5)
-    doc.line(margin + 10, signatureY + 5, margin + 70, signatureY + 5)
+    doc.line(margin + 10, signatureStartY + signatureMaxHeight / 2, margin + sigColWidth - 10, signatureStartY + signatureMaxHeight / 2)
   }
 
   // Admin signature (Administration Signature) - RIGHT SIDE
@@ -566,27 +607,42 @@ export async function generateRentalAgreementPDF(
     try {
       console.log("[PDF] Loading admin signature:", data.admin_signature.substring(0, 50))
       const adminSigData = await loadImage(data.admin_signature)
-      const sigWidth = 60
-      const sigHeight = (adminSigData.height / adminSigData.width) * sigWidth
-      const adjustedHeight = Math.min(sigHeight, 15)
-      doc.addImage(adminSigData.dataUrl, "PNG", margin + sigColWidth + 10, signatureY, sigWidth, adjustedHeight)
-      console.log("[PDF] Admin signature added to PDF")
+      
+      // Calculate signature size to fit in the box properly
+      const maxSigWidth = sigColWidth - 10 // Leave 5mm padding on each side
+      const sigRatio = adminSigData.height / adminSigData.width
+      let sigWidth = Math.min(maxSigWidth, 65)
+      let sigHeight = sigWidth * sigRatio
+      
+      // Limit height and recalculate width if needed
+      if (sigHeight > signatureMaxHeight) {
+        sigHeight = signatureMaxHeight
+        sigWidth = sigHeight / sigRatio
+      }
+      
+      // Center the signature in the box
+      const sigX = margin + sigColWidth + (sigColWidth - sigWidth) / 2
+      const sigY = signatureStartY + 2
+      
+      doc.addImage(adminSigData.dataUrl, "PNG", sigX, sigY, sigWidth, sigHeight)
+      console.log("[PDF] Admin signature added to PDF at position:", sigX, sigY, "Size:", sigWidth, "x", sigHeight)
     } catch (err) {
       console.error("[PDF] Could not load admin signature:", err)
       // Draw a line for signature if image fails
       doc.setDrawColor(150, 150, 150)
-      doc.line(margin + sigColWidth + 10, signatureY + 5, margin + sigColWidth + 70, signatureY + 5)
+      doc.line(margin + sigColWidth + 10, signatureStartY + signatureMaxHeight / 2, margin + sigColWidth * 2 - 10, signatureStartY + signatureMaxHeight / 2)
     }
   } else {
     // Draw a line for signature if not provided
     doc.setDrawColor(150, 150, 150)
-    doc.line(margin + sigColWidth + 10, signatureY + 5, margin + sigColWidth + 70, signatureY + 5)
+    doc.line(margin + sigColWidth + 10, signatureStartY + signatureMaxHeight / 2, margin + sigColWidth * 2 - 10, signatureStartY + signatureMaxHeight / 2)
   }
 
-  // Date labels
-  const dateY = sigTableY + sigRowHeight - 8
+  // Date labels - at the bottom of each box
+  const dateY = sigTableY + sigRowHeight - 6
   doc.setFontSize(9)
   doc.setFont("helvetica", "normal")
+  doc.setTextColor(80, 80, 80)
   doc.text("Date:", margin + 5, dateY)
   doc.text("Date:", margin + sigColWidth + 5, dateY)
 

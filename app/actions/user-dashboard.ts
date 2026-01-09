@@ -69,6 +69,19 @@ export interface UserBooking {
   car_name: string | null
   car_brand: string | null
   car_image: string | null
+  // Rejection fields
+  rejection_reason?: string
+  rejection_notes?: string
+  rejected_at?: string
+  can_resubmit?: boolean
+  // Document URLs for re-upload
+  driving_license_front_url?: string
+  driving_license_back_url?: string
+  proof_of_address_url?: string
+  bank_statement_url?: string
+  private_hire_license_front_url?: string
+  private_hire_license_back_url?: string
+  ni_number?: string
 }
 
 export interface UserAgreement {
@@ -295,6 +308,19 @@ export async function getUserDashboardData(): Promise<{
         car_name: car?.name || null,
         car_brand: car?.brand || null,
         car_image: car?.image || null,
+        // Rejection fields
+        rejection_reason: booking.rejection_reason || undefined,
+        rejection_notes: booking.rejection_notes || undefined,
+        rejected_at: booking.rejected_at || undefined,
+        can_resubmit: booking.can_resubmit ?? true,
+        // Document URLs
+        driving_license_front_url: booking.driving_license_front_url || undefined,
+        driving_license_back_url: booking.driving_license_back_url || undefined,
+        proof_of_address_url: booking.proof_of_address_url || undefined,
+        bank_statement_url: booking.bank_statement_url || undefined,
+        private_hire_license_front_url: booking.private_hire_license_front_url || undefined,
+        private_hire_license_back_url: booking.private_hire_license_back_url || undefined,
+        ni_number: booking.ni_number || undefined,
       }
     })
 

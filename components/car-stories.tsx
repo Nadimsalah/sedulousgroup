@@ -3,10 +3,9 @@
 import { useState, useEffect, useRef } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { X, Pause, Play, Volume2, VolumeX, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { X, Pause, Play, Volume2, VolumeX, ChevronLeft, ChevronRight, Loader2, ImageIcon } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { getStoriesAction, Story } from "@/app/actions/database"
-import { VideoThumbnail } from "@/components/video-thumbnail"
 
 export function CarStories({ rentalType }: { rentalType?: "Rent" | "Flexi Hire" | "PCO Hire" | "Sales" }) {
   const [carStories, setCarStories] = useState<Story[]>([])
@@ -64,19 +63,31 @@ export function CarStories({ rentalType }: { rentalType?: "Rent" | "Flexi Hire" 
     setStoryImageLoading(true)
     setIsVideoBuffering(false)
     setIsVideoPlaying(false)
+    setProgress(0)
+    
+    // Reset video when story or index changes
+    if (videoRef.current) {
+      videoRef.current.currentTime = 0
+      videoRef.current.pause()
+    }
   }, [selectedStory, currentIndex])
 
   useEffect(() => {
-    if (videoRef.current) {
-      if (isPaused) {
-        videoRef.current.pause()
-      } else {
-        videoRef.current.play().catch((err) => {
-          console.log('[v0] Video autoplay blocked, user interaction required:', err)
-        })
+    if (videoRef.current && selectedStory) {
+      const currentStoryItem = selectedStory.stories[currentIndex]
+      const isCurrentVideo = isVideo(currentStoryItem.image || '')
+      
+      if (isCurrentVideo) {
+        if (isPaused) {
+          videoRef.current.pause()
+        } else {
+          videoRef.current.play().catch((err) => {
+            console.log('[v0] Video autoplay blocked, user interaction required:', err)
+          })
+        }
       }
     }
-  }, [isPaused])
+  }, [isPaused, selectedStory, currentIndex])
 
   useEffect(() => {
     if (videoRef.current) {
@@ -403,28 +414,16 @@ export function CarStories({ rentalType }: { rentalType?: "Rent" | "Flexi Hire" 
                         <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-white/5 via-white/10 to-white/5 z-10" />
                       )}
                       {story.thumbnail ? (
-                        // If thumbnail is a video URL (no thumbnail was saved), generate it
-                        // Otherwise, use the saved thumbnail image
-                        isVideo(story.thumbnail) ? (
-                          <VideoThumbnail
-                            videoUrl={story.thumbnail}
-                            alt={story.title}
-                            fill
-                            className="object-cover rounded-full"
-                            onLoad={() => setThumbnailLoading(prev => ({...prev, [story.id]: false}))}
-                          />
-                        ) : (
-                          <Image
-                            src={story.thumbnail}
-                            alt={story.title}
-                            fill
-                            className="object-cover"
-                            onLoad={() => setThumbnailLoading(prev => ({...prev, [story.id]: false}))}
-                            onError={() => {
-                              setThumbnailLoading(prev => ({...prev, [story.id]: false}))
-                            }}
-                          />
-                        )
+                        <Image
+                          src={story.thumbnail}
+                          alt={story.title}
+                          fill
+                          className="object-cover"
+                          onLoad={() => setThumbnailLoading(prev => ({...prev, [story.id]: false}))}
+                          onError={() => {
+                            setThumbnailLoading(prev => ({...prev, [story.id]: false}))
+                          }}
+                        />
                       ) : (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                           <ImageIcon className="h-8 w-8 text-white/40" />
@@ -555,26 +554,32 @@ export function CarStories({ rentalType }: { rentalType?: "Rent" | "Flexi Hire" 
                   {storyImageLoading && (
                     <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-white/5 via-white/10 to-white/5 z-10" />
                   )}
-                  {/* For videos, show thumbnail - if story has a saved thumbnail for this video, use it, otherwise generate */}
-                  {selectedStory.thumbnail && !isVideo(selectedStory.thumbnail) && currentIndex === 0 ? (
-                    <Image
-                      src={selectedStory.thumbnail}
-                      alt={`${selectedStory.title} - Story ${currentIndex + 1}`}
-                      fill
-                      className="object-contain"
-                      onLoad={() => setStoryImageLoading(false)}
-                      onError={() => {
-                        setStoryImageLoading(false)
-                      }}
-                    />
-                  ) : (
-                    <VideoThumbnail
-                      videoUrl={selectedStory.stories[currentIndex].image || ''}
-                      alt={`${selectedStory.title} - Story ${currentIndex + 1}`}
-                      fill
-                      className="object-contain"
-                    />
-                  )}
+                  <video
+                    ref={videoRef}
+                    src={selectedStory.stories[currentIndex].image || ''}
+                    className="h-full w-full object-contain"
+                    muted={isMuted}
+                    playsInline
+                    autoPlay={!isPaused}
+                    onWaiting={handleVideoWaiting}
+                    onCanPlay={handleVideoCanPlay}
+                    onPlaying={handleVideoPlaying}
+                    onPause={handleVideoPause}
+                    onSeeking={handleVideoSeeking}
+                    onSeeked={handleVideoSeeked}
+                    onLoadedData={() => {
+                      setStoryImageLoading(false)
+                      setIsVideoBuffering(false)
+                      if (!isPaused) {
+                        videoRef.current?.play().catch((err) => {
+                          console.log('[v0] Video autoplay blocked:', err)
+                        })
+                      }
+                    }}
+                    onEnded={() => {
+                      handleNext()
+                    }}
+                  />
                 </>
               ) : (
                 <>

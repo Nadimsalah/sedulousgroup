@@ -14,6 +14,38 @@ import { updateCarAction, saveCarImagesAction, getCarImagesAction } from "@/app/
 
 export default function EditCarForm({ car }: { car: any }) {
   const router = useRouter()
+  
+  // Determine back URL based on rental type
+  const getBackUrl = () => {
+    const rentalType = car.rental_type || car.rentalType
+    switch (rentalType) {
+      case "Flexi Hire":
+        return "/admin/flexi-hire"
+      case "PCO Hire":
+        return "/admin/pco-hire"
+      case "Sales":
+        return "/admin/sales"
+      case "Rent":
+      default:
+        return "/admin/cars"
+    }
+  }
+  
+  const backUrl = getBackUrl()
+  const getBackLabel = () => {
+    switch (backUrl) {
+      case "/admin/flexi-hire":
+        return "Flexi Hire"
+      case "/admin/pco-hire":
+        return "PCO Hire"
+      case "/admin/sales":
+        return "Sales"
+      default:
+        return "Cars"
+    }
+  }
+  const backLabel = getBackLabel()
+  
   const [carData, setCarData] = useState({
     name: car.name || "",
     category: car.category || "Economy",
@@ -192,7 +224,7 @@ export default function EditCarForm({ car }: { car: any }) {
         alert("Car updated successfully!")
       }
 
-      router.push("/admin/cars")
+      router.push(backUrl)
       router.refresh()
     } catch (error) {
       console.error("[v0] Error updating car:", error)
@@ -208,11 +240,11 @@ export default function EditCarForm({ car }: { car: any }) {
         <div className="max-w-5xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex-1">
             <Link
-              href="/admin/cars"
+              href={backUrl}
               className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-2"
             >
               <ArrowLeft className="h-4 w-4 md:h-5 md:w-5" />
-              <span className="text-sm md:text-base">Back to Cars</span>
+              <span className="text-sm md:text-base">Back to {backLabel}</span>
             </Link>
             <div className="flex items-center justify-between gap-4">
               <div>

@@ -171,7 +171,7 @@ export default function VendorsPage() {
       (vendor.contactPerson && vendor.contactPerson.toLowerCase().includes(query)) ||
       (vendor.email && vendor.email.toLowerCase().includes(query)) ||
       (vendor.phone && vendor.phone.toLowerCase().includes(query))
-    )
+  )
   })
 
   const stats = {

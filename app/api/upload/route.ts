@@ -29,9 +29,13 @@ export async function POST(request: Request) {
 
     console.log("[v0] Uploading file:", file.name, "Size:", file.size, "Type:", file.type)
 
-    const maxSize = 10 * 1024 * 1024 // 10MB
+    // Different size limits for images vs videos
+    const isVideo = file.type.startsWith("video/")
+    const maxSize = isVideo ? 100 * 1024 * 1024 : 10 * 1024 * 1024 // 100MB for videos, 10MB for images
+    const maxSizeLabel = isVideo ? "100MB" : "10MB"
+    
     if (file.size > maxSize) {
-      return NextResponse.json({ error: "File size exceeds 10MB limit" }, { status: 400 })
+      return NextResponse.json({ error: `File size exceeds ${maxSizeLabel} limit` }, { status: 400 })
     }
 
     // Generate unique filename to avoid conflicts
@@ -60,8 +64,8 @@ export async function POST(request: Request) {
       // Try to create the bucket
       const { data: bucketData, error: createError } = await supabase.storage.createBucket(bucket, {
         public: true,
-        allowedMimeTypes: null, // Allow all file types
-        fileSizeLimit: 10485760, // 10MB
+        allowedMimeTypes: null, // Allow all file types (images and videos)
+        fileSizeLimit: 104857600, // 100MB to support videos
       })
 
       if (createError) {
@@ -73,8 +77,8 @@ export async function POST(request: Request) {
         // Try to create fallback bucket
         await supabase.storage.createBucket(fallbackBucket, {
           public: true,
-          allowedMimeTypes: null,
-          fileSizeLimit: 10485760,
+          allowedMimeTypes: null, // Allow all file types (images and videos)
+          fileSizeLimit: 104857600, // 100MB to support videos
         }).catch(() => {
           // Ignore error if bucket already exists
         })

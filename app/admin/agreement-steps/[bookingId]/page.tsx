@@ -314,6 +314,68 @@ export default function AgreementStepsPage() {
 
         setCurrentStep(2)
       } else if (currentStep === 2) {
+        // First ensure agreement exists (it should from step 1)
+        if (!agreement) {
+          setError("Agreement not found. Please go back to step 1 and complete vehicle information first.")
+          setSaving(false)
+          return
+        }
+
+        // Upload photos and save to database before moving to review
+        if (photos.length > 0) {
+          console.log("[v0] Uploading", photos.length, "photos before moving to review...")
+          console.log("[v0] Agreement ID:", agreement.id)
+          
+          const photoUrls: string[] = []
+          
+          for (let i = 0; i < photos.length; i++) {
+            const photo = photos[i]
+            try {
+              console.log(`[v0] Uploading photo ${i + 1}/${photos.length}`)
+              const formData = new FormData()
+              formData.append("file", photo)
+
+              const uploadResponse = await fetch("/api/upload", {
+                method: "POST",
+                body: formData,
+              })
+
+              if (!uploadResponse.ok) {
+                const errorData = await uploadResponse.json().catch(() => ({}))
+                throw new Error(errorData.error || `Upload failed: ${uploadResponse.statusText}`)
+              }
+
+              const uploadResult = await uploadResponse.json()
+              photoUrls.push(uploadResult.url)
+              console.log(`[v0] Photo ${i + 1} uploaded:`, uploadResult.url)
+            } catch (uploadError: any) {
+              console.error(`[v0] Failed to upload photo ${i + 1}:`, uploadError)
+              // Continue with other photos even if one fails
+            }
+          }
+
+          console.log("[v0] Photos uploaded, total:", photoUrls.length)
+          
+          // Save photos to database
+          if (photoUrls.length > 0) {
+            console.log("[v0] Saving photos to agreement:", agreement.id)
+            const updateResult = await updateAgreementAction(agreement.id, {
+              vehicle_photos: photoUrls,
+            })
+            
+            if (updateResult.success) {
+              console.log("[v0] Vehicle photos saved to agreement successfully")
+              // Update preview URLs with actual uploaded URLs
+              setPreviewUrls(photoUrls)
+            } else {
+              console.error("[v0] Failed to save photos:", updateResult.error)
+              setError(`Photos uploaded but failed to save to database: ${updateResult.error}`)
+            }
+          }
+        } else {
+          console.log("[v0] No photos to upload, moving to review")
+        }
+        
         // Move to review
         setCurrentStep(3)
       }
@@ -1037,13 +1099,20 @@ export default function AgreementStepsPage() {
                 >
                   Back
                 </Button>
-                {/* Ensure 'Continue to Review' button is only enabled when photos are added */}
+                {/* Upload photos and save to DB before moving to review */}
                 <Button
-                  onClick={handleNextStepGeneric}
+                  onClick={handleNextStep}
                   className="flex-1 bg-red-600 hover:bg-red-700"
-                  disabled={photos.length === 0}
+                  disabled={photos.length === 0 || saving}
                 >
-                  Continue to Review
+                  {saving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Uploading Photos...
+                    </>
+                  ) : (
+                    "Continue to Review"
+                  )}
                 </Button>
               </div>
             </div>

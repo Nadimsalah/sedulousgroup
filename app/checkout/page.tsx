@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"
-import { ArrowLeft, MapPin, Calendar, Clock, User, Phone, Mail, CreditCard, IdCard } from "lucide-react"
+import { ArrowLeft, MapPin, Calendar, Clock, User, Phone, Mail, CreditCard, IdCard, CheckCircle2, AlertTriangle, Lock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { getCarAction } from "@/app/actions/database"
 import { createClient } from "@/lib/supabase/client"
+import { RequiredDocuments, type DocumentData } from "@/components/checkout/required-documents"
 
 interface Car {
   id: string
@@ -34,6 +35,7 @@ export default function CheckoutPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
+  const [currentStep, setCurrentStep] = useState(1) // 1: Personal Info, 2: Documents, 3: Confirm
 
   // Trip details from URL params
   const [tripDetails, setTripDetails] = useState({
@@ -53,6 +55,10 @@ export default function CheckoutPage() {
     phone: "",
     drivingLicense: "",
   })
+
+  // Document upload state
+  const [documentsComplete, setDocumentsComplete] = useState(false)
+  const [documentData, setDocumentData] = useState<DocumentData | null>(null)
 
   useEffect(() => {
     const initialize = async () => {
@@ -130,29 +136,58 @@ export default function CheckoutPage() {
 
   const rentalDays = calculateRentalDays()
   const totalAmount = car ? car.pricePerDay * rentalDays : 0
+  const bookingType = (car?.rentalType || car?.rental_type || "Rent") as "Rent" | "Flexi Hire" | "PCO Hire"
 
-  const handleSubmitBooking = async () => {
-    if (!car) return
-
-    // Validate form
+  const validatePersonalInfo = () => {
     if (!formData.firstName || !formData.lastName) {
       setError("Please enter your full name")
-      return
+      return false
     }
     if (!formData.email) {
       setError("Please enter your email address")
-      return
+      return false
     }
     if (!formData.phone) {
       setError("Please enter your phone number")
-      return
+      return false
     }
     if (!formData.drivingLicense) {
       setError("Please enter your driving license number")
-      return
+      return false
     }
     if (!tripDetails.pickupDate || !tripDetails.dropoffDate) {
       setError("Please select pickup and dropoff dates")
+      return false
+    }
+    setError(null)
+    return true
+  }
+
+  const handleContinueToDocuments = () => {
+    if (validatePersonalInfo()) {
+      setCurrentStep(2)
+    }
+  }
+
+  const handleContinueToConfirm = () => {
+    if (!documentsComplete) {
+      setError("Please complete all required document uploads")
+      return
+    }
+    setError(null)
+    setCurrentStep(3)
+  }
+
+  const handleDocumentComplete = (isComplete: boolean, data: DocumentData) => {
+    setDocumentsComplete(isComplete)
+    setDocumentData(data)
+  }
+
+  const handleSubmitBooking = async () => {
+    if (!car || !documentData) return
+
+    if (!documentsComplete) {
+      setError("Please complete all required document uploads")
       return
     }
 
@@ -160,9 +195,7 @@ export default function CheckoutPage() {
     setError(null)
 
     try {
-      const bookingType = car.rentalType || car.rental_type || "Rent"
-
-      // Call API to create booking
+      // Call API to create booking with documents
       const response = await fetch("/api/bookings/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -181,6 +214,15 @@ export default function CheckoutPage() {
           totalAmount: totalAmount,
           bookingType: bookingType,
           userId: user?.id || null,
+          // Document data
+          niNumber: documentData.niNumber,
+          drivingLicenseFrontUrl: documentData.documents.licenseFront.url,
+          drivingLicenseBackUrl: documentData.documents.licenseBack.url,
+          proofOfAddressUrl: documentData.documents.proofOfAddress.url,
+          bankStatementUrl: documentData.documents.bankStatement?.url || null,
+          privateHireLicenseFrontUrl: documentData.documents.privateHireLicenseFront?.url || null,
+          privateHireLicenseBackUrl: documentData.documents.privateHireLicenseBack?.url || null,
+          status: "Documents Submitted", // Set initial status
         }),
       })
 
@@ -224,7 +266,7 @@ export default function CheckoutPage() {
         {/* Header */}
         <div className="mb-6 flex items-center gap-4">
           <Button
-            onClick={() => router.back()}
+            onClick={() => currentStep > 1 ? setCurrentStep(currentStep - 1) : router.back()}
             variant="ghost"
             size="icon"
             className="h-10 w-10 rounded-full border border-zinc-800 bg-zinc-900 text-white hover:bg-zinc-800"
@@ -233,141 +275,317 @@ export default function CheckoutPage() {
           </Button>
           <div>
             <h1 className="text-2xl font-bold text-white sm:text-3xl">Complete Your Booking</h1>
-            <p className="text-sm text-gray-400">Fill in your details to confirm</p>
+            <p className="text-sm text-gray-400">
+              {bookingType} • Step {currentStep} of 3
+            </p>
+          </div>
+        </div>
+
+        {/* Progress Steps */}
+        <div className="mb-8">
+          <div className="flex items-center justify-center gap-2 sm:gap-4">
+            {[
+              { step: 1, label: "Personal Info" },
+              { step: 2, label: "Documents" },
+              { step: 3, label: "Confirm" },
+            ].map(({ step, label }, index) => (
+              <div key={step} className="flex items-center">
+                <div 
+                  className={`flex items-center gap-2 rounded-full px-3 py-2 sm:px-4 ${
+                    currentStep >= step 
+                      ? "bg-red-500 text-white" 
+                      : "bg-zinc-800 text-gray-400"
+                  }`}
+                >
+                  <div className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                    currentStep > step ? "bg-white text-red-500" : "bg-white/20"
+                  }`}>
+                    {currentStep > step ? <CheckCircle2 className="h-4 w-4" /> : step}
+                  </div>
+                  <span className="hidden text-sm font-medium sm:inline">{label}</span>
+                </div>
+                {index < 2 && (
+                  <div className={`mx-2 h-0.5 w-8 sm:w-12 ${
+                    currentStep > step ? "bg-red-500" : "bg-zinc-700"
+                  }`} />
+                )}
+              </div>
+            ))}
           </div>
         </div>
 
         {error && (
-          <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-red-400">{error}</div>
+          <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-red-400 flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 flex-shrink-0" />
+            {error}
+          </div>
         )}
 
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Left Column - Form */}
           <div className="space-y-6 lg:col-span-2">
-            {/* Customer Information */}
-            <Card className="border border-zinc-800 bg-zinc-900 p-6">
-              <h2 className="mb-6 flex items-center gap-2 text-xl font-bold text-white">
-                <User className="h-5 w-5 text-red-500" />
-                Your Information
-              </h2>
+            {/* Step 1: Personal Information */}
+            {currentStep === 1 && (
+              <Card className="border border-zinc-800 bg-zinc-900 p-6">
+                <h2 className="mb-6 flex items-center gap-2 text-xl font-bold text-white">
+                  <User className="h-5 w-5 text-red-500" />
+                  Your Information
+                </h2>
 
-              <div className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <Label htmlFor="firstName" className="text-gray-300">
+                        First Name *
+                      </Label>
+                      <Input
+                        id="firstName"
+                        value={formData.firstName}
+                        onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                        className="mt-2 border-zinc-700 bg-zinc-800 text-white placeholder:text-gray-500"
+                        placeholder="John"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="lastName" className="text-gray-300">
+                        Last Name *
+                      </Label>
+                      <Input
+                        id="lastName"
+                        value={formData.lastName}
+                        onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                        className="mt-2 border-zinc-700 bg-zinc-800 text-white placeholder:text-gray-500"
+                        placeholder="Doe"
+                        required
+                      />
+                    </div>
+                  </div>
+
                   <div>
-                    <Label htmlFor="firstName" className="text-gray-300">
-                      First Name *
+                    <Label htmlFor="email" className="text-gray-300">
+                      <Mail className="mr-2 inline h-4 w-4" />
+                      Email Address *
                     </Label>
                     <Input
-                      id="firstName"
-                      value={formData.firstName}
-                      onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                      id="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       className="mt-2 border-zinc-700 bg-zinc-800 text-white placeholder:text-gray-500"
-                      placeholder="John"
+                      placeholder="john@example.com"
                       required
                     />
                   </div>
+
                   <div>
-                    <Label htmlFor="lastName" className="text-gray-300">
-                      Last Name *
+                    <Label htmlFor="phone" className="text-gray-300">
+                      <Phone className="mr-2 inline h-4 w-4" />
+                      Phone Number *
                     </Label>
                     <Input
-                      id="lastName"
-                      value={formData.lastName}
-                      onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                      id="phone"
+                      type="tel"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                       className="mt-2 border-zinc-700 bg-zinc-800 text-white placeholder:text-gray-500"
-                      placeholder="Doe"
+                      placeholder="+44 7700 900000"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="drivingLicense" className="text-gray-300">
+                      <IdCard className="mr-2 inline h-4 w-4" />
+                      Driving License Number *
+                    </Label>
+                    <Input
+                      id="drivingLicense"
+                      value={formData.drivingLicense}
+                      onChange={(e) => setFormData({ ...formData, drivingLicense: e.target.value })}
+                      className="mt-2 border-zinc-700 bg-zinc-800 text-white placeholder:text-gray-500"
+                      placeholder="Enter your driving license number"
                       required
                     />
                   </div>
                 </div>
 
-                <div>
-                  <Label htmlFor="email" className="text-gray-300">
-                    <Mail className="mr-2 inline h-4 w-4" />
-                    Email Address *
-                  </Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="mt-2 border-zinc-700 bg-zinc-800 text-white placeholder:text-gray-500"
-                    placeholder="john@example.com"
-                    required
-                  />
-                </div>
+                {/* Trip Details Summary */}
+                <div className="mt-6 pt-6 border-t border-zinc-800">
+                  <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-white">
+                    <Calendar className="h-5 w-5 text-red-500" />
+                    Trip Details
+                  </h3>
 
-                <div>
-                  <Label htmlFor="phone" className="text-gray-300">
-                    <Phone className="mr-2 inline h-4 w-4" />
-                    Phone Number *
-                  </Label>
-                  <Input
-                    id="phone"
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="mt-2 border-zinc-700 bg-zinc-800 text-white placeholder:text-gray-500"
-                    placeholder="+44 7700 900000"
-                    required
-                  />
-                </div>
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-3 rounded-lg border border-zinc-700 bg-zinc-800 p-3">
+                      <MapPin className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-400" />
+                      <div className="text-sm">
+                        <p className="font-semibold text-white">{tripDetails.pickupLocation}</p>
+                        <p className="text-gray-400">to {tripDetails.dropoffLocation}</p>
+                      </div>
+                    </div>
 
-                <div>
-                  <Label htmlFor="drivingLicense" className="text-gray-300">
-                    <IdCard className="mr-2 inline h-4 w-4" />
-                    Driving License Number *
-                  </Label>
-                  <Input
-                    id="drivingLicense"
-                    value={formData.drivingLicense}
-                    onChange={(e) => setFormData({ ...formData, drivingLicense: e.target.value })}
-                    className="mt-2 border-zinc-700 bg-zinc-800 text-white placeholder:text-gray-500"
-                    placeholder="Enter your driving license number"
-                    required
-                  />
-                </div>
-              </div>
-            </Card>
+                    <div className="flex items-start gap-3 rounded-lg border border-zinc-700 bg-zinc-800 p-3">
+                      <Calendar className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-400" />
+                      <div className="text-sm">
+                        <p className="font-semibold text-white">
+                          {tripDetails.pickupDate || "Select date"} - {tripDetails.dropoffDate || "Select date"}
+                        </p>
+                        <p className="text-gray-400">
+                          {rentalDays} day{rentalDays > 1 ? "s" : ""} rental
+                        </p>
+                      </div>
+                    </div>
 
-            {/* Trip Details */}
-            <Card className="border border-zinc-800 bg-zinc-900 p-6">
-              <h2 className="mb-6 flex items-center gap-2 text-xl font-bold text-white">
-                <Calendar className="h-5 w-5 text-red-500" />
-                Trip Details
-              </h2>
-
-              <div className="space-y-4">
-                <div className="flex items-start gap-3 rounded-lg border border-zinc-700 bg-zinc-800 p-4">
-                  <MapPin className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-400" />
-                  <div className="text-sm">
-                    <p className="font-semibold text-white">{tripDetails.pickupLocation}</p>
-                    <p className="text-gray-400">to {tripDetails.dropoffLocation}</p>
+                    <div className="flex items-start gap-3 rounded-lg border border-zinc-700 bg-zinc-800 p-3">
+                      <Clock className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-400" />
+                      <div className="text-sm">
+                        <p className="font-semibold text-white">
+                          Pickup: {tripDetails.pickupTime} | Return: {tripDetails.dropoffTime}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex items-start gap-3 rounded-lg border border-zinc-700 bg-zinc-800 p-4">
-                  <Calendar className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-400" />
-                  <div className="text-sm">
-                    <p className="font-semibold text-white">
-                      {tripDetails.pickupDate || "Select date"} - {tripDetails.dropoffDate || "Select date"}
-                    </p>
-                    <p className="text-gray-400">
-                      {rentalDays} day{rentalDays > 1 ? "s" : ""} rental
+                <Button
+                  onClick={handleContinueToDocuments}
+                  className="mt-6 w-full rounded-xl bg-red-500 py-6 text-lg font-semibold text-white shadow-lg shadow-red-500/30 transition-all duration-300 hover:bg-red-600"
+                >
+                  Continue to Documents
+                </Button>
+              </Card>
+            )}
+
+            {/* Step 2: Document Upload */}
+            {currentStep === 2 && (
+              <>
+                <RequiredDocuments
+                  bookingType={bookingType}
+                  bookingDate={tripDetails.pickupDate}
+                  onComplete={handleDocumentComplete}
+                />
+
+                <div className="flex gap-4">
+                  <Button
+                    onClick={() => setCurrentStep(1)}
+                    variant="outline"
+                    className="flex-1 border-zinc-700 bg-zinc-800 text-white hover:bg-zinc-700"
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    onClick={handleContinueToConfirm}
+                    disabled={!documentsComplete}
+                    className="flex-1 rounded-xl bg-red-500 py-6 text-lg font-semibold text-white shadow-lg shadow-red-500/30 transition-all duration-300 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {documentsComplete ? "Continue to Confirm" : "Complete All Documents"}
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* Step 3: Confirmation */}
+            {currentStep === 3 && (
+              <Card className="border border-zinc-800 bg-zinc-900 p-6">
+                <h2 className="mb-6 flex items-center gap-2 text-xl font-bold text-white">
+                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                  Confirm Your Booking
+                </h2>
+
+                {/* Summary */}
+                <div className="space-y-4">
+                  {/* Personal Info Summary */}
+                  <div className="rounded-lg border border-zinc-700 bg-zinc-800 p-4">
+                    <h3 className="mb-3 font-semibold text-white flex items-center gap-2">
+                      <User className="h-4 w-4 text-red-500" />
+                      Personal Information
+                    </h3>
+                    <div className="grid gap-2 text-sm">
+                      <p className="text-gray-400">
+                        Name: <span className="text-white">{formData.firstName} {formData.lastName}</span>
+                      </p>
+                      <p className="text-gray-400">
+                        Email: <span className="text-white">{formData.email}</span>
+                      </p>
+                      <p className="text-gray-400">
+                        Phone: <span className="text-white">{formData.phone}</span>
+                      </p>
+                      <p className="text-gray-400">
+                        Driving License: <span className="text-white">{formData.drivingLicense}</span>
+                      </p>
+                      {documentData?.niNumber && (
+                        <p className="text-gray-400">
+                          NI Number: <span className="text-white">{documentData.niNumber}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Documents Summary */}
+                  <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4">
+                    <h3 className="mb-3 font-semibold text-green-400 flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Documents Verified
+                    </h3>
+                    <ul className="space-y-1 text-sm text-green-300">
+                      <li>✓ Driving Licence (Front & Back)</li>
+                      {(bookingType === "PCO Hire") && (
+                        <li>✓ Private Hire Licence (Front & Back)</li>
+                      )}
+                      <li>✓ National Insurance Number</li>
+                      {(bookingType === "Flexi Hire" || bookingType === "PCO Hire") && (
+                        <li>✓ Bank Statement (Proof of Affordability)</li>
+                      )}
+                      <li>✓ Proof of Address</li>
+                    </ul>
+                  </div>
+
+                  {/* Terms */}
+                  <div className="rounded-lg border border-zinc-700 bg-zinc-800 p-4">
+                    <p className="text-sm text-gray-400">
+                      By confirming this booking, you agree to our{" "}
+                      <a href="/terms" className="text-red-400 hover:underline">
+                        Terms and Conditions
+                      </a>{" "}
+                      and{" "}
+                      <a href="/privacy" className="text-red-400 hover:underline">
+                        Privacy Policy
+                      </a>
+                      . Your documents will be reviewed by our team.
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-start gap-3 rounded-lg border border-zinc-700 bg-zinc-800 p-4">
-                  <Clock className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-400" />
-                  <div className="text-sm">
-                    <p className="font-semibold text-white">
-                      Pickup: {tripDetails.pickupTime} | Return: {tripDetails.dropoffTime}
-                    </p>
-                  </div>
+                <div className="flex gap-4 mt-6">
+                  <Button
+                    onClick={() => setCurrentStep(2)}
+                    variant="outline"
+                    className="flex-1 border-zinc-700 bg-zinc-800 text-white hover:bg-zinc-700"
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    onClick={handleSubmitBooking}
+                    disabled={isCreatingBooking}
+                    className="flex-1 rounded-xl bg-red-500 py-6 text-lg font-semibold text-white shadow-lg shadow-red-500/30 transition-all duration-300 hover:bg-red-600 disabled:opacity-50"
+                  >
+                    {isCreatingBooking ? (
+                      <span className="flex items-center gap-2">
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        Processing...
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2">
+                        <Lock className="h-5 w-5" />
+                        Confirm Booking
+                      </span>
+                    )}
+                  </Button>
                 </div>
-              </div>
-            </Card>
+              </Card>
+            )}
           </div>
 
           {/* Right Column - Summary */}
@@ -388,7 +606,15 @@ export default function CheckoutPage() {
                   </div>
 
                   <h3 className="mb-1 text-xl font-bold text-white">{car.name}</h3>
-                  <p className="mb-4 text-sm text-gray-400">{car.category}</p>
+                  <p className="mb-2 text-sm text-gray-400">{car.category}</p>
+                  
+                  <div className={`inline-block px-3 py-1 rounded-full text-xs font-semibold mb-4 ${
+                    bookingType === "Rent" ? "bg-green-500/20 text-green-400" :
+                    bookingType === "Flexi Hire" ? "bg-blue-500/20 text-blue-400" :
+                    "bg-purple-500/20 text-purple-400"
+                  }`}>
+                    {bookingType}
+                  </div>
 
                   <div className="space-y-3 border-t border-zinc-700 pt-4">
                     <div className="flex justify-between text-gray-300">
@@ -408,27 +634,30 @@ export default function CheckoutPage() {
                     </div>
                   </div>
 
-                  <Button
-                    onClick={handleSubmitBooking}
-                    disabled={isCreatingBooking}
-                    className="mt-6 w-full rounded-xl bg-red-500 py-6 text-lg font-semibold text-white shadow-lg shadow-red-500/30 transition-all duration-300 hover:bg-red-600 disabled:opacity-50"
-                  >
-                    {isCreatingBooking ? (
-                      <span className="flex items-center gap-2">
-                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                        Processing...
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-2">
-                        <CreditCard className="h-5 w-5" />
-                        Confirm Booking
-                      </span>
-                    )}
-                  </Button>
-
-                  <p className="mt-4 text-center text-xs text-gray-500">
-                    By confirming, you agree to our terms and conditions
-                  </p>
+                  {/* Progress indicator */}
+                  <div className="mt-6 pt-4 border-t border-zinc-700">
+                    <p className="text-xs text-gray-400 mb-2">Completion Status</p>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle2 className={`h-4 w-4 ${formData.firstName ? "text-green-400" : "text-gray-600"}`} />
+                        <span className={formData.firstName ? "text-white" : "text-gray-500"}>
+                          Personal Info
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle2 className={`h-4 w-4 ${documentsComplete ? "text-green-400" : "text-gray-600"}`} />
+                        <span className={documentsComplete ? "text-white" : "text-gray-500"}>
+                          Documents
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle2 className={`h-4 w-4 ${currentStep === 3 ? "text-green-400" : "text-gray-600"}`} />
+                        <span className={currentStep === 3 ? "text-white" : "text-gray-500"}>
+                          Confirmation
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </>
               )}
             </Card>

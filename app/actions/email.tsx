@@ -2,24 +2,79 @@
 
 import { headers } from "next/headers"
 import { db } from "@/lib/database"
+import { getEmailSettings } from "./settings"
 
 let Resend: any = null
 let resend: any = null
 
-try {
-  if (process.env.RESEND_API_KEY) {
-    const ResendModule = await import("resend")
-    Resend = ResendModule.Resend
-    resend = new Resend(process.env.RESEND_API_KEY)
+// Initialize Resend with API key from env or database
+async function initializeResend() {
+  if (resend) return resend // Already initialized
+
+  try {
+    // First try environment variable
+    let apiKey = process.env.RESEND_API_KEY
+
+    // If not in env, try database
+    if (!apiKey) {
+      try {
+        const emailSettings = await getEmailSettings()
+        if (emailSettings?.enabled && emailSettings?.resend_api_key) {
+          apiKey = emailSettings.resend_api_key
+        }
+      } catch (error) {
+        console.log("[v0] Could not load email settings from database:", error)
+      }
+    }
+
+    if (apiKey) {
+      const ResendModule = await import("resend")
+      Resend = ResendModule.Resend
+      resend = new Resend(apiKey)
+      return resend
+    }
+  } catch (error) {
+    console.log("[v0] Resend not available:", error)
   }
-} catch (error) {
-  console.log("[v0] Resend not available:", error)
+
+  return null
+}
+
+// Get Resend instance (re-initialize to get latest settings)
+async function getResendInstance() {
+  // Re-initialize to get latest settings from database
+  resend = null
+  return await initializeResend()
+}
+
+// Get email settings for from/reply-to fields
+async function getEmailConfig() {
+  try {
+    const emailSettings = await getEmailSettings()
+    if (emailSettings?.enabled) {
+      return {
+        from: emailSettings.from_email || "noreply@sedulousgroup.net",
+        fromName: emailSettings.from_name || "Sedulous Group Ltd",
+        replyTo: emailSettings.reply_to || "info@sedulousgroupltd.co.uk",
+      }
+    }
+  } catch (error) {
+    console.log("[v0] Could not load email config from database:", error)
+  }
+  
+  // Fallback to defaults
+  return {
+    from: process.env.FROM_EMAIL || "noreply@sedulousgroup.net",
+    fromName: "Sedulous Group Ltd",
+    replyTo: "info@sedulousgroupltd.co.uk",
+  }
 }
 
 export async function sendBookingConfirmationEmail(bookingId: string, customerEmail: string) {
   console.log("[v0] sendBookingConfirmationEmail called for booking:", bookingId)
 
-  if (!process.env.RESEND_API_KEY || !resend) {
+  const resendInstance = await getResendInstance()
+  if (!resendInstance) {
     console.log("[v0] Resend API Key missing. Email not sent.")
     return { success: false, error: "Email service not configured" }
   }
@@ -56,8 +111,10 @@ export async function sendBookingConfirmationEmail(bookingId: string, customerEm
       day: "numeric",
     })
 
-    const { error: emailError } = await resend.emails.send({
-      from: "Sedulous Group <bookings@sedulousgroup.net>",
+    const emailConfig = await getEmailConfig()
+    const { error: emailError } = await resendInstance.emails.send({
+      from: `${emailConfig.fromName} <${emailConfig.from}>`,
+      replyTo: emailConfig.replyTo,
       to: customerEmail,
       subject: `Booking Confirmation - ${car.name} - Reference #${bookingId.substring(0, 8).toUpperCase()}`,
       html: `
@@ -221,7 +278,8 @@ export async function sendBookingConfirmationEmail(bookingId: string, customerEm
 export async function sendBookingApprovalEmail(bookingId: string) {
   console.log("[v0] sendBookingApprovalEmail called for booking:", bookingId)
 
-  if (!process.env.RESEND_API_KEY || !resend) {
+  const resendInstance = await getResendInstance()
+  if (!resendInstance) {
     console.log("[v0] Resend API Key missing. Email not sent.")
     return { success: false, error: "Email service not configured" }
   }
@@ -263,8 +321,10 @@ export async function sendBookingApprovalEmail(bookingId: string) {
       day: "numeric",
     })
 
-    const { error: emailError } = await resend.emails.send({
-      from: "Sedulous Group <bookings@sedulousgroup.net>",
+    const emailConfig = await getEmailConfig()
+    const { error: emailError } = await resendInstance.emails.send({
+      from: `${emailConfig.fromName} <${emailConfig.from}>`,
+      replyTo: emailConfig.replyTo,
       to: booking.customerEmail,
       subject: `🎉 Booking Approved - ${car.name} - Reference #${bookingId.substring(0, 8).toUpperCase()}`,
       html: `
@@ -419,7 +479,8 @@ export async function sendBookingApprovalEmail(bookingId: string) {
 export async function sendBookingRejectionEmail(bookingId: string) {
   console.log("[v0] sendBookingRejectionEmail called for booking:", bookingId)
 
-  if (!process.env.RESEND_API_KEY || !resend) {
+  const resendInstance = await getResendInstance()
+  if (!resendInstance) {
     console.log("[v0] Resend API Key missing. Email not sent.")
     return { success: false, error: "Email service not configured" }
   }
@@ -455,8 +516,10 @@ export async function sendBookingRejectionEmail(bookingId: string) {
       day: "numeric",
     })
 
-    const { error: emailError } = await resend.emails.send({
-      from: "Sedulous Group <bookings@sedulousgroup.net>",
+    const emailConfig = await getEmailConfig()
+    const { error: emailError } = await resendInstance.emails.send({
+      from: `${emailConfig.fromName} <${emailConfig.from}>`,
+      replyTo: emailConfig.replyTo,
       to: booking.customerEmail,
       subject: `Booking Update - ${car.name} - Reference #${bookingId.substring(0, 8).toUpperCase()}`,
       html: `
@@ -585,7 +648,8 @@ export async function sendBookingRejectionEmail(bookingId: string) {
 export async function sendAgreementEmail(agreementId: string, customerEmail: string) {
   console.log("[v0] sendAgreementEmail called for agreement:", agreementId)
 
-  if (!process.env.RESEND_API_KEY || !resend) {
+  const resendInstance = await getResendInstance()
+  if (!resendInstance) {
     console.log("[v0] Resend API Key missing. Email not sent.")
     return { success: false, error: "Email service not configured" }
   }
@@ -610,8 +674,10 @@ export async function sendAgreementEmail(agreementId: string, customerEmail: str
     const logoUrl = `${origin}/images/dna-group-logo.png`
     const signUrl = `${origin}/agreement/sign/${agreementId}`
 
-    const { error: emailError } = await resend.emails.send({
-      from: "Sedulous Group <agreements@sedulousgroup.net>",
+    const emailConfig = await getEmailConfig()
+    const { error: emailError } = await resendInstance.emails.send({
+      from: `${emailConfig.fromName} <${emailConfig.from}>`,
+      replyTo: emailConfig.replyTo,
       to: customerEmail,
       subject: `📄 Rental Agreement Ready for Signature - ${agreement.agreementNumber}`,
       html: `
@@ -715,7 +781,8 @@ export async function sendAgreementEmail(agreementId: string, customerEmail: str
 export async function sendPCNTicketEmail(ticketId: string) {
   console.log("[v0] sendPCNTicketEmail called for ticket:", ticketId)
 
-  if (!process.env.RESEND_API_KEY || !resend) {
+  const resendInstance = await getResendInstance()
+  if (!resendInstance) {
     console.log("[v0] Resend API Key missing. Email not sent.")
     return { success: false, error: "Email service not configured" }
   }
@@ -756,8 +823,9 @@ export async function sendPCNTicketEmail(ticketId: string) {
             ? "Congestion Charge"
             : "Traffic Ticket"
 
-    const { error: emailError } = await resend.emails.send({
-      from: "Sedulous Group <tickets@sedulousgroup.net>",
+    const { error: emailError } = await resendInstance.emails.send({
+      from: `${emailConfig.fromName} <${emailConfig.from}>`,
+      replyTo: emailConfig.replyTo,
       to: booking.customerEmail,
       subject: `${ticketTypeLabel} Notification - ${ticket.ticketNumber || "N/A"} - ${agreement.agreementNumber}`,
       html: `
@@ -919,7 +987,8 @@ export async function sendPCNTicketEmail(ticketId: string) {
 export async function sendBookingProgressEmail(bookingId: string, stepCompleted: string) {
   console.log("[v0] sendBookingProgressEmail called for booking:", bookingId, "step:", stepCompleted)
 
-  if (!process.env.RESEND_API_KEY || !resend) {
+  const resendInstance = await getResendInstance()
+  if (!resendInstance) {
     console.log("[v0] Resend API Key missing. Email not sent.")
     return { success: false, error: "Email service not configured" }
   }
@@ -979,8 +1048,10 @@ export async function sendBookingProgressEmail(bookingId: string, stepCompleted:
         stepIcon = "🔔"
     }
 
-    const { error: emailError } = await resend.emails.send({
-      from: "Sedulous Group <bookings@sedulousgroup.net>",
+    const emailConfig = await getEmailConfig()
+    const { error: emailError } = await resendInstance.emails.send({
+      from: `${emailConfig.fromName} <${emailConfig.from}>`,
+      replyTo: emailConfig.replyTo,
       to: booking.customerEmail,
       subject: `${stepIcon} ${stepTitle} - Booking #${bookingId.substring(0, 8).toUpperCase()}`,
       html: `

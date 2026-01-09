@@ -1,7 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -15,10 +14,11 @@ import {
   AlertCircle,
   Send,
   Download,
-  Eye,
   Plus,
   Filter,
   CarIcon,
+  Loader2,
+  ChevronDown,
 } from "lucide-react"
 import { getBookingsAction } from "@/app/actions/requests"
 import {
@@ -29,13 +29,19 @@ import {
 import { getCarsAction } from "@/app/actions/database"
 import { toast } from "sonner"
 
+const ITEMS_PER_PAGE = 10
+
 export default function AgreementsPage() {
-  const router = useRouter()
   const [bookings, setBookings] = useState<any[]>([])
   const [cars, setCars] = useState<any[]>([])
   const [agreements, setAgreements] = useState<Record<string, any[]>>({})
   const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [processingBookingId, setProcessingBookingId] = useState<string | null>(null)
+  const [displayCount, setDisplayCount] = useState(ITEMS_PER_PAGE)
+  const [loadedAgreementIds, setLoadedAgreementIds] = useState<Set<string>>(new Set())
+  const observerRef = useRef<IntersectionObserver | null>(null)
+  const loadMoreRef = useRef<HTMLDivElement>(null)
 
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "signed">("all")
@@ -45,6 +51,11 @@ export default function AgreementsPage() {
   useEffect(() => {
     loadData()
   }, [])
+
+  // Reset display count when filters change
+  useEffect(() => {
+    setDisplayCount(ITEMS_PER_PAGE)
+  }, [searchTerm, statusFilter, bookingTypeFilter, sortBy])
 
   const loadData = async () => {
     setIsLoading(true)
@@ -57,12 +68,25 @@ export default function AgreementsPage() {
       setBookings(relevantBookings)
       setCars(carsData)
 
-      const agreementsData: Record<string, any[]> = {}
-      for (const booking of relevantBookings) {
+      // Load agreements for first batch in PARALLEL for faster loading
+      const initialBookings = relevantBookings.slice(0, ITEMS_PER_PAGE)
+      const loadedIds = new Set<string>()
+      
+      // Parallel loading - much faster!
+      const agreementPromises = initialBookings.map(async (booking: any) => {
         const bookingAgreements = await getAgreementsByBookingAction(booking.id)
-        agreementsData[booking.id] = bookingAgreements
-      }
+        return { bookingId: booking.id, agreements: bookingAgreements }
+      })
+      
+      const results = await Promise.all(agreementPromises)
+      const agreementsData: Record<string, any[]> = {}
+      results.forEach(({ bookingId, agreements: agr }) => {
+        agreementsData[bookingId] = agr
+        loadedIds.add(bookingId)
+      })
+      
       setAgreements(agreementsData)
+      setLoadedAgreementIds(loadedIds)
     } catch (error) {
       console.error("[v0] Error loading data:", error)
       toast.error("Failed to load agreements")
@@ -70,6 +94,47 @@ export default function AgreementsPage() {
       setIsLoading(false)
     }
   }
+
+  // Load agreements for visible bookings in PARALLEL
+  const loadAgreementsForBookings = useCallback(async (bookingIds: string[]) => {
+    const newIds = bookingIds.filter(id => !loadedAgreementIds.has(id))
+    if (newIds.length === 0) return
+
+    setIsLoadingMore(true)
+    try {
+      // Parallel loading - much faster!
+      const agreementPromises = newIds.map(async (bookingId) => {
+        const bookingAgreements = await getAgreementsByBookingAction(bookingId)
+        return { bookingId, agreements: bookingAgreements }
+      })
+      
+      const results = await Promise.all(agreementPromises)
+      const newAgreements: Record<string, any[]> = {}
+      results.forEach(({ bookingId, agreements: agr }) => {
+        newAgreements[bookingId] = agr
+      })
+      
+      setAgreements(prev => ({ ...prev, ...newAgreements }))
+      setLoadedAgreementIds(prev => {
+        const updated = new Set(prev)
+        newIds.forEach(id => updated.add(id))
+        return updated
+      })
+    } catch (error) {
+      console.error("[v0] Error loading more agreements:", error)
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }, [loadedAgreementIds])
+
+  const handleLoadMore = useCallback(() => {
+    const newCount = displayCount + ITEMS_PER_PAGE
+    setDisplayCount(newCount)
+    
+    // Load agreements for newly visible bookings
+    const newlyVisibleBookings = bookings.slice(displayCount, newCount)
+    loadAgreementsForBookings(newlyVisibleBookings.map(b => b.id))
+  }, [displayCount, bookings, loadAgreementsForBookings])
 
   const handleCreateAgreement = async (bookingId: string) => {
     setProcessingBookingId(bookingId)
@@ -137,6 +202,10 @@ export default function AgreementsPage() {
       return (a.customerName || "").localeCompare(b.customerName || "")
     }
   })
+
+  // Lazy loading: only display up to displayCount items
+  const displayedBookings = sortedBookings.slice(0, displayCount)
+  const hasMore = displayedBookings.length < sortedBookings.length
 
   const stats = {
     total: bookings.length,
@@ -290,7 +359,14 @@ export default function AgreementsPage() {
         {/* Agreements List */}
         <div className="liquid-glass rounded-2xl border border-white/10 overflow-hidden">
           <div className="p-4">
-            <h2 className="text-xl font-bold text-white mb-3">Agreements ({sortedBookings.length})</h2>
+            <h2 className="text-xl font-bold text-white mb-3">
+              Agreements ({sortedBookings.length})
+              {displayedBookings.length < sortedBookings.length && (
+                <span className="text-sm font-normal text-gray-400 ml-2">
+                  Showing {displayedBookings.length} of {sortedBookings.length}
+                </span>
+              )}
+            </h2>
 
             {isLoading ? (
               <div className="text-center py-12">
@@ -317,9 +393,10 @@ export default function AgreementsPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {sortedBookings.map((booking) => {
+                {displayedBookings.map((booking) => {
                   const bookingAgreements = agreements[booking.id] || []
                   const hasAgreement = bookingAgreements.length > 0
+                  const isAgreementLoading = !loadedAgreementIds.has(booking.id)
 
                   return (
                     <div
@@ -362,7 +439,12 @@ export default function AgreementsPage() {
                       </div>
 
                       {/* Agreements or Create Button */}
-                      {hasAgreement ? (
+                      {isAgreementLoading ? (
+                        <div className="flex items-center justify-center py-4 text-gray-400">
+                          <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                          <span className="text-sm">Loading agreement...</span>
+                        </div>
+                      ) : hasAgreement ? (
                         <div className="space-y-2">
                           {bookingAgreements.map((agreement) => (
                             <div key={agreement.id} className="bg-black/30 border border-white/5 rounded-lg p-3">
@@ -412,14 +494,6 @@ export default function AgreementsPage() {
                                         Download
                                       </Button>
                                     )}
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => router.push(`/admin/agreements/${agreement.id}`)}
-                                      className="bg-white/5 border-white/20 text-white hover:bg-white/10"
-                                    >
-                                      <Eye className="h-4 w-4" />
-                                    </Button>
                                   </div>
                                 </div>
                               </div>
@@ -448,6 +522,29 @@ export default function AgreementsPage() {
                     </div>
                   )
                 })}
+
+                {/* Load More Button */}
+                {hasMore && (
+                  <div ref={loadMoreRef} className="pt-4">
+                    <Button
+                      onClick={handleLoadMore}
+                      disabled={isLoadingMore}
+                      className="w-full bg-white/10 hover:bg-white/20 text-white border border-white/20"
+                    >
+                      {isLoadingMore ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          Loading more...
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="h-4 w-4 mr-2" />
+                          Load More ({sortedBookings.length - displayedBookings.length} remaining)
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -20,6 +20,7 @@ import {
   AlertCircle,
   Plus,
   Car,
+  ChevronDown,
 } from "lucide-react"
 import { getDeposits, refundDeposit, deductFromDeposit, createDeposit } from "@/app/actions/admin-deposits"
 import { getAllBookingsAction } from "@/app/actions/bookings"
@@ -28,11 +29,14 @@ import { toast } from "sonner"
 import type { Deposit } from "@/app/actions/admin-deposits"
 import type { BookingWithDetails } from "@/app/actions/bookings"
 
+const ITEMS_PER_PAGE = 15
+
 export default function DepositsPage() {
   const [deposits, setDeposits] = useState<Deposit[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "held" | "refunded" | "deducted">("all")
   const [isLoading, setIsLoading] = useState(true)
+  const [displayCount, setDisplayCount] = useState(ITEMS_PER_PAGE)
   const [error, setError] = useState<string | null>(null)
   const [showRefundDialog, setShowRefundDialog] = useState(false)
   const [showDeductDialog, setShowDeductDialog] = useState(false)
@@ -64,6 +68,15 @@ export default function DepositsPage() {
   useEffect(() => {
     loadDeposits()
     loadActiveBookings()
+  }, [])
+
+  // Reset display count when filters change
+  useEffect(() => {
+    setDisplayCount(ITEMS_PER_PAGE)
+  }, [searchQuery, statusFilter])
+
+  const handleLoadMore = useCallback(() => {
+    setDisplayCount(prev => prev + ITEMS_PER_PAGE)
   }, [])
 
   const loadActiveBookings = async () => {
@@ -130,6 +143,10 @@ export default function DepositsPage() {
     return matchesSearch && matchesStatus
   })
 
+  // Lazy loading
+  const displayedDeposits = filteredDeposits.slice(0, displayCount)
+  const hasMore = displayedDeposits.length < filteredDeposits.length
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "pending":
@@ -191,7 +208,7 @@ export default function DepositsPage() {
 
       if (result.success) {
         toast.success("Refund processed successfully!")
-        setShowRefundDialog(false)
+      setShowRefundDialog(false)
         setRefundAmount("")
         setNotes("")
         await loadDeposits()
@@ -234,7 +251,7 @@ export default function DepositsPage() {
 
       if (result.success) {
         toast.success("Deduction processed successfully!")
-        setShowDeductDialog(false)
+      setShowDeductDialog(false)
         setDeductionAmount("")
         setDeductionReason("")
         setNotes("")
@@ -356,10 +373,10 @@ export default function DepositsPage() {
               <Plus className="h-4 w-4 mr-2" />
               Add Deposit
             </Button>
-            <Button className="bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white">
-              <Download className="h-4 w-4 mr-2" />
-              Export Report
-            </Button>
+          <Button className="bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white">
+            <Download className="h-4 w-4 mr-2" />
+            Export Report
+          </Button>
           </div>
         </div>
 
@@ -371,8 +388,12 @@ export default function DepositsPage() {
               <CreditCard className="h-4 w-4 text-blue-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-white">{stats.total}</div>
-              <p className="text-xs text-gray-500 mt-1">£{stats.totalAmount.toLocaleString()} total value</p>
+              <div className="text-2xl font-bold text-white">
+                {isLoading ? <span className="animate-pulse">...</span> : stats.total}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {isLoading ? "..." : `£${stats.totalAmount.toLocaleString()} total value`}
+              </p>
             </CardContent>
           </Card>
           <Card className="bg-zinc-900 border-zinc-800">
@@ -381,7 +402,9 @@ export default function DepositsPage() {
               <DollarSign className="h-4 w-4 text-yellow-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-white">{stats.held}</div>
+              <div className="text-2xl font-bold text-white">
+                {isLoading ? <span className="animate-pulse">...</span> : stats.held}
+              </div>
               <p className="text-xs text-gray-500 mt-1">Currently held deposits</p>
             </CardContent>
           </Card>
@@ -391,7 +414,9 @@ export default function DepositsPage() {
               <CheckCircle className="h-4 w-4 text-green-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-white">{stats.refunded}</div>
+              <div className="text-2xl font-bold text-white">
+                {isLoading ? <span className="animate-pulse">...</span> : stats.refunded}
+              </div>
               <p className="text-xs text-gray-500 mt-1">Successfully refunded</p>
             </CardContent>
           </Card>
@@ -401,7 +426,9 @@ export default function DepositsPage() {
               <XCircle className="h-4 w-4 text-red-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-white">{stats.deducted}</div>
+              <div className="text-2xl font-bold text-white">
+                {isLoading ? <span className="animate-pulse">...</span> : stats.deducted}
+              </div>
               <p className="text-xs text-gray-500 mt-1">With deductions</p>
             </CardContent>
           </Card>
@@ -451,11 +478,19 @@ export default function DepositsPage() {
         {/* Deposits List */}
         <div className="space-y-4">
           {isLoading ? (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center">
-              <div className="flex justify-center">
-                <div className="w-8 h-8 border-4 border-zinc-700 border-t-red-500 rounded-full animate-spin"></div>
-              </div>
-              <p className="text-gray-400 mt-4">Loading deposits...</p>
+            <div className="space-y-4">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 animate-pulse">
+                  <div className="flex flex-col lg:flex-row gap-4">
+                    <div className="flex-1 space-y-3">
+                      <div className="h-6 bg-zinc-800 rounded w-1/3" />
+                      <div className="h-4 bg-zinc-800/50 rounded w-1/2" />
+                      <div className="h-4 bg-zinc-800/50 rounded w-2/3" />
+                    </div>
+                    <div className="w-24 h-10 bg-zinc-800 rounded" />
+                  </div>
+                </div>
+              ))}
             </div>
           ) : filteredDeposits.length === 0 ? (
             <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center">
@@ -463,7 +498,7 @@ export default function DepositsPage() {
               <p className="text-gray-400">No deposits found</p>
             </div>
           ) : (
-            filteredDeposits.map((deposit) => (
+            displayedDeposits.map((deposit) => (
               <div
                 key={deposit.id}
                 className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 hover:border-zinc-700 transition"
@@ -532,6 +567,19 @@ export default function DepositsPage() {
                 </div>
               </div>
             ))
+          )}
+
+          {/* Load More Button */}
+          {!isLoading && hasMore && (
+            <div className="pt-4">
+              <Button
+                onClick={handleLoadMore}
+                className="w-full bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700"
+              >
+                <ChevronDown className="h-4 w-4 mr-2" />
+                Load More ({filteredDeposits.length - displayedDeposits.length} remaining)
+              </Button>
+            </div>
           )}
         </div>
       </div>

@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Search, Edit, Trash2, Eye, Star, Plus, CarIcon } from "lucide-react"
+import { useState, useEffect, useCallback } from "react"
+import { Search, Edit, Trash2, Eye, Star, Plus, CarIcon, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -9,12 +9,15 @@ import Image from "next/image"
 import Link from "next/link"
 import { getCarsAction, deleteCarAction, type Car } from "@/app/actions/database"
 
+const ITEMS_PER_PAGE = 12
+
 export default function CarsManagementPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [cars, setCars] = useState<Car[]>([])
   const [imageLoadingStates, setImageLoadingStates] = useState<Record<string, boolean>>({})
   const [isLoading, setIsLoading] = useState(true)
+  const [displayCount, setDisplayCount] = useState(ITEMS_PER_PAGE)
 
   useEffect(() => {
     loadCars()
@@ -38,6 +41,15 @@ export default function CarsManagementPage() {
     }
   }
 
+  // Reset display count when filters change
+  useEffect(() => {
+    setDisplayCount(ITEMS_PER_PAGE)
+  }, [searchQuery, selectedCategory])
+
+  const handleLoadMore = useCallback(() => {
+    setDisplayCount(prev => prev + ITEMS_PER_PAGE)
+  }, [])
+
   const filteredCars = cars.filter((car) => {
     const matchesSearch =
       car.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -45,6 +57,10 @@ export default function CarsManagementPage() {
     const matchesCategory = selectedCategory === "All" || car.category === selectedCategory
     return matchesSearch && matchesCategory
   })
+
+  // Lazy loading
+  const displayedCars = filteredCars.slice(0, displayCount)
+  const hasMore = displayedCars.length < filteredCars.length
 
   const handleDelete = async (carId: string) => {
     if (window.confirm("Are you sure you want to delete this car? This action cannot be undone.")) {
@@ -162,7 +178,7 @@ export default function CarsManagementPage() {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredCars.map((car) => (
+            {displayedCars.map((car) => (
               <div
                 key={car.id}
                 className="liquid-glass rounded-2xl border-white/10 overflow-hidden hover:border-red-500/50 transition-all duration-300"
@@ -260,6 +276,19 @@ export default function CarsManagementPage() {
               <Search className="h-12 w-12 text-white/40 mx-auto mb-4" />
               <p className="text-white/80 text-lg font-semibold mb-2">No cars found</p>
               <p className="text-white/60">Try adjusting your search or filter criteria</p>
+            </div>
+          )}
+
+          {/* Load More Button */}
+          {hasMore && (
+            <div className="col-span-full pt-4">
+              <Button
+                onClick={handleLoadMore}
+                className="w-full bg-white/10 hover:bg-white/20 text-white border border-white/20"
+              >
+                <ChevronDown className="h-4 w-4 mr-2" />
+                Load More ({filteredCars.length - displayedCars.length} remaining)
+              </Button>
             </div>
           )}
         </>
