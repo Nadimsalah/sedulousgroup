@@ -32,7 +32,7 @@ export default function AdminLogin() {
 
       if (!supabase) {
         console.error("[v0] Supabase client is null")
-        setError("Authentication system is not available. Please contact support.")
+        setError("CRITICAL ERROR: System Unavailable. Missing Vercel ENV Variables (NEXT_PUBLIC_SUPABASE_URL).")
         setIsLoading(false)
         return
       }
@@ -47,12 +47,12 @@ export default function AdminLogin() {
 
         if (authError.message === "Invalid login credentials" || authError.message.includes("Invalid")) {
           setError(
-            "Invalid admin credentials. Please check your email and password. Contact IT support if you need help.",
+            "Login Failed: Invalid email or password. Ensure you are using 'sami@admin.com'.",
           )
         } else if (authError.message.includes("Email not confirmed")) {
-          setError("Please verify your admin email first. Check your inbox for the verification link.")
+          setError("Account exists but email is not verified. Check your inbox.")
         } else {
-          setError(authError.message || "Login failed. Please try again.")
+          setError(`Error: ${authError.message}`)
         }
 
         setIsLoading(false)
@@ -101,7 +101,8 @@ export default function AdminLogin() {
         <div className="bg-[#1a1a1a] rounded-lg p-8 border border-neutral-800 shadow-2xl">
           <form onSubmit={handleLogin} className="space-y-6">
             {error && (
-              <div className="bg-red-500/10 border border-red-500/30 text-red-300 px-4 py-3 rounded-lg text-sm">
+              <div className="bg-red-500/10 border border-red-500/30 text-red-300 px-4 py-3 rounded-lg text-sm mb-6">
+                <strong className="block font-bold mb-1">Login Error</strong>
                 {error}
               </div>
             )}
