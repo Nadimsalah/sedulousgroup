@@ -28,7 +28,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     // Handle both Promise and direct params (Next.js 15+ uses Promise)
     const resolvedParams = params instanceof Promise ? await params : params
     const agreementId = resolvedParams.agreementId
-    
+
     if (!agreementId) {
       return NextResponse.json({ error: "Agreement ID is required" }, { status: 400 })
     }
@@ -64,6 +64,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (body.vehicle_photos) updateData.vehicle_photos = body.vehicle_photos
     if (body.fuel_level) updateData.fuel_level = body.fuel_level
     if (body.odometer_reading !== undefined) updateData.odometer_reading = body.odometer_reading
+    if (body.vehicle_registration) updateData.vehicle_registration = body.vehicle_registration
     // Note: customer_name_signed is stored in the PDF, not in the database column
 
     const { data, error } = await adminSupabase
@@ -87,7 +88,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ success: true, agreement: data })
   } catch (error: any) {
     console.error("[v0] Error in PATCH agreement:", error)
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: error.message || "Failed to update agreement",
       details: error.toString()
     }, { status: 500 })

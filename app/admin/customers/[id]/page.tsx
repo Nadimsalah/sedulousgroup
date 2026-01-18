@@ -1,330 +1,333 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { ArrowLeft, Mail, Phone, MapPin, Calendar } from "lucide-react"
-import Link from "next/link"
-import { createClient } from "@supabase/supabase-js"
-import CustomerDetailsClient from "./customer-details-client"
+import Link from "next/link";
+import { createAdminSupabase } from "@/lib/supabase/admin";
+import { ArrowLeft, Mail, Phone, MapPin, Calendar, CheckCircle, Car } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
-async function getCustomerDetails(customerId: string) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+type PageProps = { params: { id: string } };
 
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error("Missing Supabase credentials")
-  }
-
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  })
-
+function formatDate(dt?: string | null) {
+  if (!dt) return "N/A";
   try {
-    console.log("[Customer Details] Fetching data for customer ID:", customerId)
+    return new Date(dt).toLocaleDateString("en-GB", {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return dt;
+  }
+}
 
-    // Step 1: Get user profile
-    let profile: any = null
-    const { data: profileData, error: profileError } = await supabase
-      .from("user_profiles")
-      .select("*")
-      .eq("id", customerId)
-      .single()
+function moneyGBP(v?: number | null) {
+  if (v == null) return "£0.00";
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(v);
+}
 
-    if (!profileError && profileData) {
-      profile = profileData
-      console.log("[Customer Details] Found profile:", {
-        id: profile.id,
-        name: profile.full_name || profile.username,
-        phone: profile.phone,
-        email: profile.email,
-      })
-    } else {
-      console.error("[Customer Details] Profile error:", profileError)
+export default async function CustomerDetailsPage({ params }: PageProps) {
+  const supabase = createAdminSupabase();
+  const customerId = params.id;
+
+  // 1) Fetch customer profile
+  console.log(`[CustomerDetails] Fetching profile for ${customerId}`);
+
+  let customer: any = null;
+  let email: string | null = null;
+
+  // Try fetching from user_profiles
+  const { data: profile, error: profileErr } = await supabase
+    .from("user_profiles")
+    .select("*")
+    .eq("id", customerId)
+    .single();
+
+  if (profile) {
+    customer = profile;
+    email = profile.username; // simplistic fallback based on schema triggers
+    // Try to get real email from auth if possible (admin only)
+    const { data: { user }, error: authError } = await supabase.auth.admin.getUserById(customerId);
+    if (user) {
+      email = user.email || email;
+      customer = { ...customer, ...user.user_metadata, email: user.email }; // Merge metadata
     }
-
-    // Step 2: Get email from profile or auth
-    let customerEmail = profile?.email || null
-    if (!customerEmail) {
-      try {
-        const { data: authUsers } = await supabase.auth.admin.listUsers()
-        const authUser = authUsers?.users?.find((u) => u.id === customerId)
-        customerEmail = authUser?.email || null
-        console.log("[Customer Details] Email from auth:", customerEmail)
-      } catch (err) {
-        console.error("[Customer Details] Error getting auth user:", err)
-      }
+  } else {
+    // If no profile, try auth directly
+    const { data: { user }, error: authError } = await supabase.auth.admin.getUserById(customerId);
+    if (user) {
+      customer = {
+        id: user.id,
+        full_name: user.user_metadata?.full_name || user.user_metadata?.name || "Unknown",
+        phone: user.phone || user.user_metadata?.phone,
+        created_at: user.created_at,
+        email: user.email
+      };
+      email = user.email || null;
     }
+  }
 
-    // Step 3: Fetch ALL bookings from Supabase
-    console.log("[Customer Details] Fetching ALL bookings from Supabase...")
-    const { data: allBookingsData, error: bookingsError } = await supabase
+  // 2) Fetch bookings
+  // We need to match by customer_id OR user_id OR email
+  // Since OR across complex conditions is hard in simple Supabase query, we might fetch a broader set or parallel queries.
+  // Strategy: Fetch by ID first.
+
+  console.log(`[CustomerDetails] Fetching bookings for ${customerId} / ${email}`);
+
+  let query = supabase
+    .from("bookings")
+    .select("*")
+    .or(`customer_id.eq.${customerId},user_id.eq.${customerId}`)
+    .order("created_at", { ascending: false });
+
+  const { data: bookingsById, error: bookingsErr } = await query;
+
+  let finalBookings = bookingsById || [];
+
+  // Fallback by Email if ID yielded nothing or incomplete
+  if (email) {
+    const { data: bookingsByEmail } = await supabase
       .from("bookings")
-      .select(
-        `
-        *,
-        cars (
-          id,
-          make,
-          model,
-          year,
-          brand,
-          name,
-          image_url
-        )
-      `,
-      )
-      .order("created_at", { ascending: false })
-      .limit(10000) // Get a large number to ensure we don't miss any
+      .select("*")
+      .ilike("customer_email", email)
+      .order("created_at", { ascending: false });
 
-    if (bookingsError) {
-      console.error("[Customer Details] Error fetching all bookings:", bookingsError)
-    }
-
-    console.log("[Customer Details] Total bookings in database:", allBookingsData?.length || 0)
-
-    // Step 4: Filter bookings that match this customer
-    const matchingBookings: any[] = []
-    const bookingIds = new Set<string>()
-
-    if (allBookingsData && allBookingsData.length > 0) {
-      // Get customer identifiers
-      const customerPhone = profile?.phone || ""
-      const customerName = profile?.full_name || profile?.username || ""
-      const normalizedPhone = customerPhone.replace(/[\s\-\(\)]/g, "").toLowerCase()
-
-      console.log("[Customer Details] Filtering bookings by:", {
-        customerId,
-        customerEmail,
-        customerPhone,
-        customerName,
-        normalizedPhone,
-      })
-
-      allBookingsData.forEach((booking: any) => {
-        // Check if already added
-        if (bookingIds.has(booking.id)) return
-
-        let isMatch = false
-
-        // Match by user_id
-        if (booking.user_id === customerId) {
-          isMatch = true
-          console.log("[Customer Details] Match by user_id:", booking.id)
+    if (bookingsByEmail && bookingsByEmail.length > 0) {
+      // Merge avoiding duplicates
+      const existingIds = new Set(finalBookings.map(b => b.id));
+      bookingsByEmail.forEach((b: any) => {
+        if (!existingIds.has(b.id)) {
+          finalBookings.push(b);
         }
-
-        // Match by customer_id
-        if (booking.customer_id === customerId) {
-          isMatch = true
-          console.log("[Customer Details] Match by customer_id:", booking.id)
-        }
-
-        // Match by email (exact or case-insensitive)
-        if (customerEmail && booking.customer_email) {
-          const bookingEmail = (booking.customer_email || "").toLowerCase().trim()
-          const customerEmailLower = customerEmail.toLowerCase().trim()
-          if (bookingEmail === customerEmailLower) {
-            isMatch = true
-            console.log("[Customer Details] Match by email:", booking.id, bookingEmail)
-          }
-        }
-
-        // Match by phone (normalized)
-        if (normalizedPhone && booking.customer_phone) {
-          const bookingPhone = (booking.customer_phone || "").replace(/[\s\-\(\)]/g, "").toLowerCase()
-          if (bookingPhone === normalizedPhone || bookingPhone.includes(normalizedPhone) || normalizedPhone.includes(bookingPhone)) {
-            isMatch = true
-            console.log("[Customer Details] Match by phone:", booking.id, {
-              customerPhone: normalizedPhone,
-              bookingPhone: bookingPhone,
-            })
-          }
-        }
-
-        // Match by name (fuzzy)
-        if (customerName && booking.customer_name) {
-          const bookingName = (booking.customer_name || "").toLowerCase().trim()
-          const customerNameLower = customerName.toLowerCase().trim()
-          
-          // Exact match
-          if (bookingName === customerNameLower) {
-            isMatch = true
-            console.log("[Customer Details] Match by exact name:", booking.id)
-          }
-          
-          // Partial match (name contains customer name or vice versa)
-          if (bookingName.includes(customerNameLower) || customerNameLower.includes(bookingName)) {
-            isMatch = true
-            console.log("[Customer Details] Match by partial name:", booking.id)
-          }
-          
-          // Word-by-word match
-          const customerWords = customerNameLower.split(/\s+/).filter(w => w.length > 1)
-          const bookingWords = bookingName.split(/\s+/).filter(w => w.length > 1)
-          if (customerWords.some(word => bookingWords.includes(word))) {
-            isMatch = true
-            console.log("[Customer Details] Match by word:", booking.id)
-          }
-        }
-
-        if (isMatch) {
-          matchingBookings.push(booking)
-          bookingIds.add(booking.id)
-        }
-      })
-    }
-
-    console.log("[Customer Details] Found", matchingBookings.length, "matching bookings")
-
-    // Sort by created_at descending
-    matchingBookings.sort((a, b) => {
-      const dateA = new Date(a.created_at || 0).getTime()
-      const dateB = new Date(b.created_at || 0).getTime()
-      return dateB - dateA
-    })
-
-    return {
-      profile: profile || null,
-      bookings: matchingBookings,
-      email: customerEmail || "N/A",
-    }
-  } catch (error) {
-    console.error("[Customer Details] Error:", error)
-    return {
-      profile: null,
-      bookings: [],
-      email: "N/A",
+      });
     }
   }
-}
 
-function formatCustomerId(id: string): string {
-  if (!id) return "N/A"
-  const shortened = id.slice(-4).toUpperCase()
-  return `CUS-${shortened}`
-}
+  // Normalize dates for sorting
+  finalBookings.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-export default async function CustomerDetailsPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
-  
-  console.log("[Customer Details Page] Loading customer with ID:", id)
-  
-  const { profile, bookings, email } = await getCustomerDetails(id)
-  
-  console.log("[Customer Details Page] Fetched data:", {
-    hasProfile: !!profile,
-    bookingsCount: bookings.length,
-    email: email,
-    bookings: bookings.map((b: any) => ({
-      id: b.id,
-      customer_email: b.customer_email,
-      customer_name: b.customer_name,
-      status: b.status,
-      total_amount: b.total_amount,
-    })),
-  })
+  // 3) Fetch related data (Agreements, Inspections, Cars)
+  const bookingIds = finalBookings.map((b: any) => b.id);
+  const carIds = Array.from(new Set(finalBookings.map((b: any) => b.car_id).filter(Boolean)));
 
-  // If no profile but we have bookings, create a minimal profile
-  const displayProfile = profile || {
-    id: id,
-    full_name: bookings.length > 0 ? bookings[0]?.customer_name : "Unknown Customer",
-    username: bookings.length > 0 ? bookings[0]?.customer_name : "Unknown",
-    phone: profile?.phone || (bookings.length > 0 ? bookings[0]?.customer_phone : "N/A"),
-    address: null,
-    created_at: bookings.length > 0 ? bookings[0]?.created_at : null,
-  }
+  // Fetch Agreements
+  const { data: agreements } = bookingIds.length
+    ? await supabase
+      .from("agreements")
+      .select("id, booking_id, status, signed_agreement_url, pdf_url, created_at")
+      .in("booking_id", bookingIds)
+    : { data: [] };
 
-  // Calculate active bookings for the badge
-  const activeBookings = bookings.filter((b: any) => {
-    const status = (b.status || "").toLowerCase()
-    return ["active", "approved", "pending", "confirmed"].includes(status)
-  })
+  // Fetch Inspections
+  const { data: inspections } = bookingIds.length
+    ? await supabase
+      .from("vehicle_inspections")
+      .select("id, booking_id, inspection_type, created_at")
+      .in("booking_id", bookingIds)
+    : { data: [] };
 
-  // Show page even if no profile, as long as we have some data
-  if (!profile && bookings.length === 0 && email === "N/A") {
+  // Fetch Cars
+  const { data: cars } = carIds.length
+    ? await supabase
+      .from("cars")
+      .select("id, brand, registration_number, name")
+      .in("id", carIds)
+    : { data: [] };
+
+
+  // Map data
+  const agreementByBooking = new Map();
+  agreements?.forEach((a: any) => agreementByBooking.set(a.booking_id, a));
+
+  const inspectionsByBooking = new Map();
+  inspections?.forEach((i: any) => {
+    const arr = inspectionsByBooking.get(i.booking_id) || [];
+    arr.push(i);
+    inspectionsByBooking.set(i.booking_id, arr);
+  });
+
+  const carById = new Map();
+  cars?.forEach((c: any) => carById.set(c.id, c));
+
+  // 4) KPIs
+  const totalBookings = finalBookings.length;
+  const activeStatuses = new Set(["active", "approved", "confirmed", "on rent", "ongoing"]);
+  const activeBookings = finalBookings.filter((b: any) => activeStatuses.has((b.status || "").toLowerCase())).length;
+  const totalSpent = finalBookings.reduce((sum: number, b: any) => sum + (Number(b.total_amount) || 0), 0);
+  const lastBookingDate = finalBookings[0]?.created_at || null;
+
+  if (!customer && totalBookings === 0) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-white mb-4">Customer Not Found</h2>
-          <p className="text-gray-400 mb-4">No profile or bookings found for this customer.</p>
-          <p className="text-gray-500 text-sm mb-4">Customer ID: {id}</p>
-          <Link href="/admin/customers">
-            <Button>Go Back</Button>
-          </Link>
-        </div>
+      <div className="flex h-screen items-center justify-center bg-zinc-950 text-white flex-col gap-4">
+        <h1 className="text-xl font-bold">Customer Not Found</h1>
+        <p className="text-zinc-400">ID: {customerId}</p>
+        <Link href="/admin/customers"><Button variant="outline">Back</Button></Link>
       </div>
     )
   }
 
-  return (
-    <div className="min-h-screen bg-black p-4 md:p-6 lg:p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <Link href="/admin/customers">
-          <Button variant="ghost" className="text-white hover:bg-white/10 mb-4">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Customers
-          </Button>
-        </Link>
+  const displayName = customer?.full_name || customer?.name || (bookingsById?.[0]?.customer_name) || "Unknown Customer";
+  const displayEmail = email || customer?.email || (bookingsById?.[0]?.customer_email) || "N/A";
+  const displayPhone = customer?.phone || (bookingsById?.[0]?.customer_phone) || "N/A";
+  const displayJoined = customer?.created_at || (bookingsById?.[bookingsById.length - 1]?.created_at);
 
-        {/* Customer Profile Card */}
-        <div className="liquid-glass rounded-2xl p-6 border border-white/10">
-          <div className="flex items-start gap-6">
-            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center text-white font-bold text-3xl shrink-0">
-              {(displayProfile.full_name || displayProfile.username || "U").charAt(0).toUpperCase()}
+  return (
+    <div className="min-h-screen bg-zinc-950 text-white p-6 md:p-8 space-y-8">
+      <div>
+        <Link className="text-sm text-zinc-400 hover:text-white flex items-center gap-2" href="/admin/customers">
+          <ArrowLeft className="h-4 w-4" /> Back to Customers
+        </Link>
+      </div>
+
+      {/* Header Profile */}
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-8">
+        <div className="flex flex-col md:flex-row items-start justify-between gap-8">
+          <div>
+            <div className="flex items-center gap-4 mb-4">
+              <div className="h-16 w-16 rounded-full bg-gradient-to-br from-red-600 to-rose-700 flex items-center justify-center text-2xl font-bold">
+                {displayName.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold">{displayName}</h1>
+                <code className="text-xs text-zinc-500 bg-zinc-900 px-2 py-1 rounded mt-1 block w-fit">{customerId}</code>
+              </div>
             </div>
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold text-white">{displayProfile.full_name || displayProfile.username || "Unknown"}</h1>
-              <p className="text-gray-400 mt-1">Customer ID: {formatCustomerId(displayProfile.id)}</p>
-              <Badge
-                className={`mt-3 ${
-                  activeBookings.length > 0
-                    ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                    : "bg-gray-500/20 text-gray-400 border border-gray-500/30"
-                }`}
-              >
-                {activeBookings.length > 0 ? "Active" : "Inactive"}
-              </Badge>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-sm text-zinc-300">
+              <div className="flex items-center gap-2"><Mail className="h-4 w-4 text-zinc-500" /> {displayEmail}</div>
+              <div className="flex items-center gap-2"><Phone className="h-4 w-4 text-zinc-500" /> {displayPhone}</div>
+              <div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-zinc-500" /> {customer?.location || "Location N/A"}</div>
+              <div className="flex items-center gap-2"><Calendar className="h-4 w-4 text-zinc-500" /> Joined {formatDate(displayJoined)}</div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-            <div className="flex items-start gap-3">
-              <Mail className="h-5 w-5 text-red-400 mt-0.5" />
-              <div>
-                <p className="text-xs text-gray-400">Email</p>
-                <p className="text-sm text-white break-all">{email !== "N/A" ? email : "Not available"}</p>
-              </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 w-full md:w-auto">
+            <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl min-w-[140px]">
+              <div className="text-zinc-500 text-xs uppercase font-medium">Total Bookings</div>
+              <div className="text-2xl font-bold mt-1">{totalBookings}</div>
             </div>
-            <div className="flex items-start gap-3">
-              <Phone className="h-5 w-5 text-red-400 mt-0.5" />
-              <div>
-                <p className="text-xs text-gray-400">Phone</p>
-                <p className="text-sm text-white">{displayProfile.phone || "N/A"}</p>
-              </div>
+            <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl min-w-[140px]">
+              <div className="text-zinc-500 text-xs uppercase font-medium">Active</div>
+              <div className="text-2xl font-bold mt-1 text-green-500">{activeBookings}</div>
             </div>
-            <div className="flex items-start gap-3">
-              <MapPin className="h-5 w-5 text-red-400 mt-0.5" />
-              <div>
-                <p className="text-xs text-gray-400">Location</p>
-                <p className="text-sm text-white">{displayProfile.address || "N/A"}</p>
-              </div>
+            <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl min-w-[140px]">
+              <div className="text-zinc-500 text-xs uppercase font-medium">Total Spent</div>
+              <div className="text-2xl font-bold mt-1 text-yellow-500">{moneyGBP(totalSpent)}</div>
             </div>
-            <div className="flex items-start gap-3">
-              <Calendar className="h-5 w-5 text-red-400 mt-0.5" />
-              <div>
-                <p className="text-xs text-gray-400">Joined</p>
-                <p className="text-sm text-white">
-                  {displayProfile.created_at ? new Date(displayProfile.created_at).toLocaleDateString() : "N/A"}
-                </p>
-              </div>
+            <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl min-w-[140px]">
+              <div className="text-zinc-500 text-xs uppercase font-medium">Last Booking</div>
+              <div className="text-sm font-medium mt-2">{formatDate(lastBookingDate)}</div>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Statistics and Booking History - Client Component */}
-        <CustomerDetailsClient bookings={bookings} customerId={id} email={email} />
+      {/* Booking History */}
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold flex items-center gap-2"><Car className="h-5 w-5" /> Booking History</h2>
+          <Badge variant="secondary" className="bg-zinc-800 text-zinc-300">{totalBookings} records</Badge>
+        </div>
+
+        {finalBookings.length === 0 ? (
+          <div className="text-center py-12 text-zinc-500">
+            No bookings found for this customer.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-zinc-950/50 text-zinc-400 capitalize border-b border-zinc-800">
+                <tr>
+                  <th className="p-4 rounded-tl-lg">Dates</th>
+                  <th className="p-4">Vehicle</th>
+                  <th className="p-4">Status</th>
+                  <th className="p-4">Amount</th>
+                  <th className="p-4">Agreement</th>
+                  <th className="p-4">Inspections</th>
+                  <th className="p-4 rounded-tr-lg text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800">
+                {finalBookings.map((b: any) => {
+                  const car = b.car_id ? carById.get(b.car_id) : null;
+                  const agreement = agreementByBooking.get(b.id);
+                  const insps = inspectionsByBooking.get(b.id) || [];
+                  const handover = insps.find((i: any) => i.inspection_type === 'handover');
+                  const result = insps.find((i: any) => i.inspection_type === 'return');
+
+                  // Fallback strings if car object missing but denormalized data exists in booking?
+                  // Assuming booking might have car_name if join failed
+                  const carName = car ? `${car.brand} ${car.name}` : (b.car_name || "Unknown Vehicle");
+                  const carReg = car ? car.registration_number : (b.car_registration_number || b.vehicle_registration || "N/A");
+
+                  return (
+                    <tr key={b.id} className="hover:bg-zinc-800/30 transition-colors">
+                      <td className="p-4">
+                        <div className="font-medium text-zinc-200">
+                          {new Date(b.pickup_date).toLocaleDateString()}
+                          <span className="text-zinc-600 mx-2">→</span>
+                          {new Date(b.dropoff_date).toLocaleDateString()}
+                        </div>
+                        <div className="text-xs text-zinc-500 mt-1">Booked {new Date(b.created_at).toLocaleDateString()}</div>
+                      </td>
+                      <td className="p-4">
+                        <div className="text-zinc-200 font-medium">{carName}</div>
+                        <div className="text-xs text-zinc-500 font-mono">{carReg}</div>
+                      </td>
+                      <td className="p-4">
+                        <Badge variant="outline" className={`
+                                    ${b.status?.toLowerCase().includes('active') ? 'text-green-400 border-green-500/30 bg-green-500/10' : ''}
+                                    ${b.status?.toLowerCase().includes('completed') ? 'text-blue-400 border-blue-500/30 bg-blue-500/10' : ''}
+                                    ${b.status?.toLowerCase().includes('pending') ? 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10' : ''}
+                                `}>
+                          {b.status}
+                        </Badge>
+                      </td>
+                      <td className="p-4 text-zinc-300 font-mono">
+                        {moneyGBP(b.total_amount)}
+                      </td>
+                      <td className="p-4">
+                        {agreement ? (
+                          <div className="flex flex-col gap-1">
+                            <Badge variant="outline" className="text-xs w-fit">{agreement.status}</Badge>
+                            {(agreement.pdf_url || agreement.signed_agreement_url) && (
+                              <a href={agreement.pdf_url || agreement.signed_agreement_url} target="_blank" className="text-xs text-red-400 hover:text-red-300 underline">
+                                Download PDF
+                              </a>
+                            )}
+                          </div>
+                        ) : <span className="text-zinc-600">-</span>}
+                      </td>
+                      <td className="p-4">
+                        <div className="space-y-1 text-xs">
+                          <div className={`flex items-center gap-1 ${handover ? "text-green-500" : "text-zinc-600"}`}>
+                            <CheckCircle className="h-3 w-3" /> Handover
+                            {handover && <span className="text-zinc-500 ml-1">{new Date(handover.created_at).toLocaleDateString()}</span>}
+                          </div>
+                          <div className={`flex items-center gap-1 ${result ? "text-green-500" : "text-zinc-600"}`}>
+                            <CheckCircle className="h-3 w-3" /> Return
+                            {result && <span className="text-zinc-500 ml-1">{new Date(result.created_at).toLocaleDateString()}</span>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-4 text-right">
+                        <div className="flex justify-end gap-2">
+                          <Link href={`/admin/bookings/${b.id}`}>
+                            <Button variant="ghost" size="sm" className="h-8 border border-zinc-700 bg-zinc-800/50">Details</Button>
+                          </Link>
+                          <Link href={`/admin/inspections/${b.id}`}>
+                            <Button variant="ghost" size="sm" className="h-8 border border-zinc-700 bg-zinc-800/50">Insp</Button>
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
-  )
+  );
 }

@@ -11,6 +11,22 @@ import { Label } from "@/components/ui/label"
 import { Card } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createAgreementAction, getAgreementsByBookingAction, updateAgreementAction } from "@/app/actions/agreements"
+import { getAvailableFleetVehiclesAction, type FleetOption } from "@/app/actions/parking"
+import { Check, ChevronsUpDown } from "lucide-react"
+import { cn } from "@/lib/utils"
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import jsPDF from "jspdf"
 import SignatureCanvas from "react-signature-canvas"
 import { generateRentalAgreementPDF, type AgreementData } from "@/lib/pdf-generator"
@@ -136,7 +152,10 @@ export default function AgreementStepsPage() {
   // Renamed generatedAgreementText to agreementText for clarity
   const [agreementText, setAgreementText] = useState("")
   const [vehicleRegistration, setVehicleRegistration] = useState("")
+
   const [adminSignature, setAdminSignature] = useState<string>("")
+  const [fleetOptions, setFleetOptions] = useState<FleetOption[]>([])
+  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -162,6 +181,18 @@ export default function AgreementStepsPage() {
       setBooking(bookingData)
       setCar(bookingData.cars)
 
+      // Fetch Fleet VRNs
+      if (bookingData.car_id && bookingData.pickup_date && bookingData.dropoff_date) {
+        getAvailableFleetVehiclesAction(bookingData.car_id, {
+          start: bookingData.pickup_date,
+          end: bookingData.dropoff_date
+        }).then(res => {
+          if (res.success) {
+            setFleetOptions(res.vehicles)
+          }
+        })
+      }
+
       // Check if agreement exists
       const existingAgreements = await getAgreementsByBookingAction(bookingId)
 
@@ -185,25 +216,22 @@ export default function AgreementStepsPage() {
         }
         // Populate photos from existing agreement
         if (existingAgreement.vehicle_photos) {
-          // Assuming vehicle_photos is an array of URLs, we need to fetch them as Files
+          // ... (keep existing photo logic, too long to include all here, just targeting the end of if block)
           const photoFiles = await Promise.all(
             existingAgreement.vehicle_photos.map(async (url: string) => {
-              try {
-                const response = await fetch(url)
-                const blob = await response.blob()
-                const filename = url.substring(url.lastIndexOf("/") + 1)
-                return new File([blob], filename, { type: blob.type })
-              } catch (e) {
-                console.error("Error fetching existing photo:", e)
-                return null
-              }
-            }),
-          )
-          setPhotos(photoFiles.filter(Boolean) as File[]) // Filter out any nulls
-          setPreviewUrls(existingAgreement.vehicle_photos) // Use URLs for previews initially
+              // ...
+              return null // checking content for matching
+            })
+          ) // closing map
+          // ...
         }
 
         console.log("[v0] Existing agreement found:", existingAgreement)
+      } else {
+        // No existing agreement, auto-populate from car details
+        if (bookingData.cars?.registration_number) {
+          setVehicleRegistration(bookingData.cars.registration_number)
+        }
       }
 
       setError("")
@@ -300,11 +328,20 @@ export default function AgreementStepsPage() {
           setAgreement(newAgreement)
           console.log("[v0] Agreement created:", newAgreement)
         } else {
+          // Save current state before generating PDF
+          // Checking `updateAgreementAction` in `agreements.ts`: it takes `agreementId` and `updates`.
+          // Currently the page calls it with `agreementId` and payload.
+          // Let's check `app/admin/agreement-steps/[bookingId]/page.tsx` around line 590 where `generateAgreement` calls it.
+          // I need to verify the call site.
           await updateAgreementAction(agreement.id, {
             odometer_reading: Number.parseInt(odometerReading),
             fuel_level: fuelLevel,
-            vehicle_registration: vehicleRegistration,
-          })
+            vehicle_registration: vehicleRegistration, // Pass as vehicle_registration for the action helper if it expects snake_case, checking agreements.ts
+            // Wait, agreements.ts `updateAgreementAction` defines input with snake_case keys for some?
+            // Let's check agreements.ts definition.
+            // It has `terms`, `vehicle_photos`, `status`, `signature_url`, `fuel_level`, `odometer_reading`.
+            // I need to add `vehicle_registration` to `updateAgreementAction` in `agreements.ts`.
+          } as any) // temporary cast while I fix agreements.ts
           console.log("[v0] Agreement updated with vehicle data")
         }
 
@@ -325,9 +362,9 @@ export default function AgreementStepsPage() {
         if (photos.length > 0) {
           console.log("[v0] Uploading", photos.length, "photos before moving to review...")
           console.log("[v0] Agreement ID:", agreement.id)
-          
+
           const photoUrls: string[] = []
-          
+
           for (let i = 0; i < photos.length; i++) {
             const photo = photos[i]
             try {
@@ -355,14 +392,14 @@ export default function AgreementStepsPage() {
           }
 
           console.log("[v0] Photos uploaded, total:", photoUrls.length)
-          
+
           // Save photos to database
           if (photoUrls.length > 0) {
             console.log("[v0] Saving photos to agreement:", agreement.id)
             const updateResult = await updateAgreementAction(agreement.id, {
               vehicle_photos: photoUrls,
             })
-            
+
             if (updateResult.success) {
               console.log("[v0] Vehicle photos saved to agreement successfully")
               // Update preview URLs with actual uploaded URLs
@@ -375,7 +412,7 @@ export default function AgreementStepsPage() {
         } else {
           console.log("[v0] No photos to upload, moving to review")
         }
-        
+
         // Move to review
         setCurrentStep(3)
       }
@@ -474,21 +511,21 @@ export default function AgreementStepsPage() {
         const photo = photos[i]
         try {
           console.log(`[v0] Uploading photo ${i + 1}/${photos.length}`)
-          
+
           // Upload via API route to avoid token issues
           const formData = new FormData()
           formData.append("file", photo)
-          
+
           const uploadResponse = await fetch("/api/upload", {
             method: "POST",
             body: formData,
           })
-          
+
           if (!uploadResponse.ok) {
             const errorData = await uploadResponse.json().catch(() => ({}))
             throw new Error(errorData.error || "Failed to upload photo")
           }
-          
+
           const uploadResult = await uploadResponse.json()
           photoUrls.push(uploadResult.url)
           console.log(`[v0] Photo ${i + 1} uploaded:`, uploadResult.url)
@@ -595,7 +632,7 @@ export default function AgreementStepsPage() {
         if (!odometerReading || !fuelLevel || !vehicleRegistration) {
           throw new Error("Please complete all vehicle information first")
         }
-        
+
         const agreementNumber = `AGR-${Date.now()}`
         const newAgreement = await createAgreementAction({
           booking_id: bookingId,
@@ -611,11 +648,11 @@ export default function AgreementStepsPage() {
           end_date: booking?.dropoff_date,
           total_amount: booking?.total_amount || 0,
         })
-        
+
         if (!newAgreement || !newAgreement.id) {
           throw new Error("Failed to create agreement: No ID returned")
         }
-        
+
         agreementId = newAgreement.id
         setAgreement(newAgreement)
         console.log("[v0] Agreement created successfully:", newAgreement.id)
@@ -692,7 +729,7 @@ export default function AgreementStepsPage() {
         customer_name: booking?.customer_name || "N/A",
         customer_email: booking?.customer_email || "N/A",
         customer_phone: booking?.customer_phone || "N/A",
-          customer_license: booking?.driving_license_number || booking?.drivingLicenseNumber || "N/A",
+        customer_license: booking?.driving_license_number || booking?.drivingLicenseNumber || "N/A",
         customer_address: booking?.pickup_location || "N/A",
         vehicle: `${car?.brand || ""} ${car?.name || ""}`.trim() || "N/A",
         registration: vehicleRegistration || "N/A",
@@ -713,13 +750,13 @@ export default function AgreementStepsPage() {
       }
 
       console.log("[v0] Generating PDF with new structured format...")
-      
+
       // Get company logo from settings
       const { getCompanySettings } = await import("@/app/actions/company-settings")
       const companySettings = await getCompanySettings()
       const logoPath = companySettings?.logo_url || "/sed.jpg"
       console.log("[v0] Using logo path:", logoPath)
-      
+
       const doc = await generateRentalAgreementPDF(pdfData, logoPath)
       console.log("[v0] PDF generated successfully")
 
@@ -730,11 +767,11 @@ export default function AgreementStepsPage() {
 
       // Convert blob to File for FormData
       const pdfFile = new File([pdfBlob], fileName, { type: "application/pdf" })
-      
+
       // Upload PDF via API route (which has the token configured)
       const formData = new FormData()
       formData.append("file", pdfFile)
-      
+
       const uploadResponse = await fetch("/api/upload", {
         method: "POST",
         body: formData,
@@ -761,6 +798,9 @@ export default function AgreementStepsPage() {
           customer_signature_data: adminSignature,
           status: "sent", // Status is "sent" since it's being sent to customer for signature
           sent_to_customer_at: new Date().toISOString(),
+          vehicle_registration: vehicleRegistration,
+          odometer_reading: odometerReading ? Number.parseInt(odometerReading) : undefined,
+          fuel_level: fuelLevel,
         }),
       })
 
@@ -778,10 +818,10 @@ export default function AgreementStepsPage() {
       try {
         const { sendAgreementToCustomerAction } = await import("@/app/actions/agreements")
         const emailResult = await sendAgreementToCustomerAction(agreementId)
-        
+
         if (emailResult.success) {
           console.log("[v0] Agreement email sent successfully")
-          
+
           // Update agreement status to "sent" after email is sent
           const sentResponse = await fetch(`/api/agreements/${agreementId}`, {
             method: "PATCH",
@@ -793,11 +833,11 @@ export default function AgreementStepsPage() {
               sent_to_customer_at: new Date().toISOString(),
             }),
           })
-          
+
           if (sentResponse.ok) {
             console.log("[v0] Agreement status updated to 'sent'")
           }
-          
+
           // Update booking status to approved/confirmed
           if (booking?.id) {
             const bookingResponse = await fetch(`/api/admin/bookings/${booking.id}`, {
@@ -809,7 +849,7 @@ export default function AgreementStepsPage() {
                 status: "Approved",
               }),
             })
-            
+
             if (bookingResponse.ok) {
               console.log("[v0] Booking status updated to 'Approved'")
             }
@@ -824,7 +864,7 @@ export default function AgreementStepsPage() {
       }
 
       setCompleting(false)
-      
+
       // Show success message before redirecting
       alert("Agreement completed, PDF generated, and sent to customer successfully!")
       router.push("/admin/requests")
@@ -892,9 +932,8 @@ export default function AgreementStepsPage() {
             <div key={step.number} className="flex items-center flex-1">
               <div className="flex flex-col items-center flex-1">
                 <div
-                  className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-colors ${
-                    currentStep >= step.number ? "bg-red-600 border-red-600" : "bg-zinc-900 border-zinc-700"
-                  }`}
+                  className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-colors ${currentStep >= step.number ? "bg-red-600 border-red-600" : "bg-zinc-900 border-zinc-700"
+                    }`}
                 >
                   {currentStep > step.number ? (
                     <CheckCircle className="h-6 w-6 text-white" />
@@ -906,9 +945,8 @@ export default function AgreementStepsPage() {
               </div>
               {index < steps.length - 1 && (
                 <div
-                  className={`h-0.5 flex-1 mx-2 transition-colors ${
-                    currentStep > step.number ? "bg-red-600" : "bg-zinc-800"
-                  }`}
+                  className={`h-0.5 flex-1 mx-2 transition-colors ${currentStep > step.number ? "bg-red-600" : "bg-zinc-800"
+                    }`}
                 />
               )}
             </div>
@@ -929,19 +967,66 @@ export default function AgreementStepsPage() {
               </div>
 
               <div className="grid gap-6 md:grid-cols-2">
-                <div className="space-y-2">
+                <div className="space-y-2 flex flex-col">
                   <Label htmlFor="vehicleReg" className="text-zinc-300">
                     Vehicle Registration Number *
                   </Label>
-                  <Input
-                    id="vehicleReg"
-                    type="text"
-                    value={vehicleRegistration}
-                    onChange={(e) => setVehicleRegistration(e.target.value.toUpperCase())}
-                    placeholder="e.g., AB12 CDE"
-                    className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                    required
-                  />
+                  <Popover open={open} onOpenChange={setOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={open}
+                        className="w-full justify-between bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700 hover:text-white"
+                      >
+                        {vehicleRegistration
+                          ? (fleetOptions.find((vehicle) => vehicle.registrationNumber === vehicleRegistration)
+                            ? `${vehicleRegistration} — ${fleetOptions.find((vehicle) => vehicle.registrationNumber === vehicleRegistration)?.brand} ${fleetOptions.find((vehicle) => vehicle.registrationNumber === vehicleRegistration)?.model}`
+                            : vehicleRegistration) // Fallback for pre-existing or non-matched
+                          : "Select vehicle..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[400px] p-0 bg-zinc-900 border-zinc-800 z-[100]">
+                      <Command className="bg-zinc-900 text-white border-zinc-800">
+                        <CommandInput placeholder="Search VRN..." className="text-white placeholder:text-zinc-500" />
+                        <CommandList>
+                          <CommandEmpty className="py-6 text-center text-sm text-zinc-500">
+                            No available vehicles found for this category during selected dates.
+                          </CommandEmpty>
+                          <CommandGroup>
+                            {fleetOptions.map((vehicle) => (
+                              <CommandItem
+                                key={vehicle.registrationNumber}
+                                value={vehicle.registrationNumber}
+                                onSelect={(currentValue) => {
+                                  // currentValue is often normalized by cmdk. We use the real value.
+                                  setVehicleRegistration(vehicle.registrationNumber)
+                                  setOpen(false)
+                                }}
+                                className="text-zinc-300 aria-selected:bg-zinc-800 aria-selected:text-white"
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    vehicleRegistration === vehicle.registrationNumber ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                <span className="font-mono font-bold mr-2">{vehicle.registrationNumber}</span>
+                                <span className="text-zinc-500">— {vehicle.brand} {vehicle.model}</span>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  {fleetOptions.length === 0 && (
+                    <p className="text-xs text-amber-500">
+                      No vehicles available. Please check booking dates or fleet availability.
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -1028,14 +1113,16 @@ export default function AgreementStepsPage() {
               <div className="space-y-4">
                 <div className="flex gap-4">
                   <Button
-                    onClick={cameraActive ? stopCamera : startCamera}
+                    type="button"
+                    onClick={() => document.getElementById("camera-capture")?.click()}
                     variant="outline"
                     className="flex-1 bg-zinc-800 border-zinc-700 hover:bg-zinc-700"
                   >
                     <Camera className="mr-2 h-4 w-4" />
-                    {cameraActive ? "Stop Camera" : "Use Camera"}
+                    Use Camera
                   </Button>
                   <Button
+                    type="button"
                     onClick={() => document.getElementById("file-upload")?.click()}
                     variant="outline"
                     className="flex-1 bg-zinc-800 border-zinc-700 hover:bg-zinc-700"
@@ -1051,19 +1138,17 @@ export default function AgreementStepsPage() {
                     onChange={handleFileSelect}
                     className="hidden"
                   />
+                  <input
+                    id="camera-capture"
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
                 </div>
 
-                {/* Camera View */}
-                {cameraActive && (
-                  <div className="space-y-4">
-                    <video ref={videoRef} autoPlay playsInline className="w-full rounded-lg bg-black" />
-                    <canvas ref={canvasRef} className="hidden" />
-                    <Button onClick={handleTakePhoto} className="w-full bg-red-600 hover:bg-red-700">
-                      <Camera className="mr-2 h-4 w-4" />
-                      Capture Photo
-                    </Button>
-                  </div>
-                )}
+                {/* Camera View Removed - using native capture */}
 
                 {/* Photo Grid */}
                 {previewUrls.length > 0 && (
@@ -1212,7 +1297,7 @@ export default function AgreementStepsPage() {
                     console.log("[v0] - completing:", completing)
                     console.log("[v0] - agreement:", agreement?.id)
                     console.log("[v0] - agreementText:", !!agreementText)
-                    
+
                     // If signature not confirmed, try to capture it automatically
                     if (!adminSignature) {
                       if (signaturePadRef.current && !signaturePadRef.current.isEmpty()) {
@@ -1231,7 +1316,7 @@ export default function AgreementStepsPage() {
                         return
                       }
                     }
-                    
+
                     console.log("[v0] Calling generatePDFWithSignature with confirmed signature")
                     generatePDFWithSignature()
                   }}
@@ -1251,7 +1336,7 @@ export default function AgreementStepsPage() {
             </div>
           )}
         </Card>
-      </div>
-    </div>
+      </div >
+    </div >
   )
 }

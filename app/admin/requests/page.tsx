@@ -32,6 +32,10 @@ import { getAllBookingsAction, updateBookingStatusAction, rejectBookingAction, t
 import { REJECTION_REASONS } from "@/lib/booking-constants"
 import Image from "next/image"
 import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
+import { Label } from "@/components/ui/label"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { toast } from "sonner"
 
 const ITEMS_PER_PAGE = 15
 
@@ -176,18 +180,52 @@ export default function AdminRequestsPage() {
       case "pending":
       case "pending review":
       case "pending details":
-        return "bg-yellow-500/10 text-yellow-500 border border-yellow-500/30"
+      case "documents submitted":
+        return "bg-amber-500/10 text-amber-500 border-amber-500/20"
       case "approved":
-        return "bg-green-500/10 text-green-500 border border-green-500/30"
+      case "confirmed":
+        return "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+      case "agreement sent":
+        return "bg-purple-500/10 text-purple-500 border-purple-500/20"
       case "active":
-        return "bg-blue-500/10 text-blue-500 border border-blue-500/30"
+        return "bg-blue-500/10 text-blue-500 border-blue-500/20"
       case "completed":
-        return "bg-purple-500/10 text-purple-500 border border-purple-500/30"
+        return "bg-purple-500/10 text-purple-500 border-purple-500/20"
       case "rejected":
-        return "bg-red-500/10 text-red-500 border border-red-500/30"
+        return "bg-red-500/10 text-red-500 border-red-500/20"
       default:
-        return "bg-gray-500/10 text-gray-500 border border-gray-500/30"
+        return "bg-white/10 text-white/40 border-white/10"
     }
+  }
+
+  const getStatusColorHex = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case "pending":
+      case "pending review":
+      case "pending details":
+      case "documents submitted":
+        return "#f59e0b"
+      case "approved":
+      case "confirmed":
+        return "#10b981"
+      case "agreement sent":
+        return "#a855f7"
+      case "active":
+        return "#3b82f6"
+      case "completed":
+        return "#a855f7"
+      case "rejected":
+        return "#ef4444"
+      default:
+        return "#27272a"
+    }
+  }
+
+  const getStatusDisplayText = (status: string | undefined) => {
+    if (status?.toLowerCase() === "agreement sent") {
+      return "Waiting for Client Signature"
+    }
+    return status || "Unknown"
   }
 
   // Calculate statistics
@@ -273,162 +311,149 @@ export default function AdminRequestsPage() {
         {error && <div className="bg-red-500/10 border border-red-500 rounded-lg p-4 mb-6 text-red-400">{error}</div>}
 
         {/* Bookings List */}
-        <div className="space-y-4">
-          <h2 className="text-xl font-bold text-white">
-            Bookings <span className="text-gray-400 font-normal">({filteredBookings.length} bookings)</span>
-            {displayedBookings.length < filteredBookings.length && (
-              <span className="text-sm font-normal text-gray-500 ml-2">
-                (Showing {displayedBookings.length})
-              </span>
-            )}
-          </h2>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between pb-2">
+            <h2 className="text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+              Manifest <span className="text-white/40 font-normal">({filteredBookings.length})</span>
+            </h2>
+          </div>
 
           {isLoading ? (
-            <div className="space-y-4">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 animate-pulse">
-                  <div className="flex flex-col lg:flex-row gap-4">
-                    <div className="w-full lg:w-32 h-24 bg-zinc-800 rounded-lg" />
-                    <div className="flex-1 space-y-3">
-                      <div className="h-6 bg-zinc-800 rounded w-1/3" />
-                      <div className="h-4 bg-zinc-800/50 rounded w-1/2" />
-                      <div className="h-4 bg-zinc-800/50 rounded w-2/3" />
-                    </div>
-                  </div>
-                </div>
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="liquid-glass border-white/10 rounded-xl p-6 h-32 animate-pulse" />
               ))}
             </div>
           ) : filteredBookings.length === 0 ? (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center">
-              <p className="text-gray-400">No bookings found</p>
+            <div className="liquid-glass border-white/10 rounded-xl p-20 text-center">
+              <AlertTriangle className="w-12 h-12 text-white/10 mx-auto mb-4" />
+              <p className="text-white font-medium">No results found in ledger</p>
+              <p className="text-sm text-white/40 mt-1">Try adjusting your filters or search query</p>
             </div>
           ) : (
             displayedBookings.map((booking) => (
               <div
                 key={booking.id}
-                className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 hover:border-zinc-700 transition"
+                className="liquid-glass border-white/10 rounded-xl p-4 md:p-5 hover:bg-white/[0.03] transition-all group border-l-4"
+                style={{ borderLeftColor: getStatusColorHex(booking.status) }}
               >
-                <div className="flex flex-col lg:flex-row gap-4">
-                  {/* Car Image */}
-                  <div className="w-full lg:w-32 h-24 bg-zinc-800 rounded-lg flex-shrink-0 overflow-hidden">
+                <div className="flex flex-col lg:flex-row gap-5">
+                  {/* Car Image (Compact) */}
+                  <div className="w-full lg:w-40 aspect-video lg:h-24 bg-white/5 rounded-lg flex-shrink-0 overflow-hidden relative border border-white/5 group-hover:border-white/10 transition-colors">
                     <img
                       src={booking.car_image || "/placeholder.svg?height=96&width=128&query=car"}
                       alt={booking.car_name || "Car"}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                     />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60" />
+                    <div className="absolute bottom-2 left-2 flex gap-1">
+                      <Badge className="bg-black/60 backdrop-blur-md text-[10px] text-white/80 border-white/10 px-1.5 h-5 flex items-center">
+                        {booking.car_name?.split(' ')[0] || "Fleet"}
+                      </Badge>
+                    </div>
                   </div>
 
                   {/* Booking Details */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-3 mb-3">
-                      <h3 className="text-lg font-bold text-white">{booking.car_name || "Unknown Car"}</h3>
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}
-                      >
-                        {booking.status}
-                      </span>
-                      {booking.booking_type && (
-                        <span className="px-2 py-1 rounded bg-zinc-800 text-gray-300 text-xs">
-                          {booking.booking_type}
-                        </span>
-                      )}
-                    </div>
+                  <div className="flex-1 min-w-0 flex flex-col justify-between py-1">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <h3 className="text-lg font-bold text-white group-hover:text-red-400 transition-colors">{booking.car_name || "Unknown Vehicle"}</h3>
+                        <Badge className={`text-[10px] uppercase font-bold px-2 py-0.5 ${getStatusColor(booking.status)}`}>
+                          {getStatusDisplayText(booking.status)}
+                        </Badge>
+                        {booking.booking_type && (
+                          <Badge variant="outline" className="text-[10px] text-white/40 border-white/10">
+                            {booking.booking_type}
+                          </Badge>
+                        )}
+                      </div>
 
-                    {/* Customer Information - Enhanced Display */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
-                      <div className="flex items-center gap-2 text-gray-300">
-                        <User className="w-4 h-4 text-red-400 flex-shrink-0" />
-                        <span className="text-sm font-medium truncate">
-                          {booking.customer_name || "No name provided"}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-gray-300">
-                        <Mail className="w-4 h-4 text-red-400 flex-shrink-0" />
-                        <span className="text-sm truncate">{booking.customer_email || "No email"}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-gray-300">
-                        <Phone className="w-4 h-4 text-red-400 flex-shrink-0" />
-                        <span className="text-sm">{booking.customer_phone || "No phone"}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-gray-300">
-                        <Calendar className="w-4 h-4 text-red-400 flex-shrink-0" />
-                        <span className="text-sm">
-                          {booking.pickup_date} - {booking.dropoff_date}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-gray-300">
-                        <MapPin className="w-4 h-4 text-red-400 flex-shrink-0" />
-                        <span className="text-sm truncate">{booking.pickup_location || "London"}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <CreditCard className="w-4 h-4 text-green-400 flex-shrink-0" />
-                        <span className="text-lg font-bold text-white">
-                          £{booking.total_amount?.toFixed(2) || "0.00"}
-                        </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-2">
+                        <div className="flex items-center gap-2 text-white/60">
+                          <User className="w-3.5 h-3.5 text-red-500" />
+                          <span className="text-xs font-medium truncate">{booking.customer_name}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-white/40">
+                          <Calendar className="w-3.5 h-3.5 text-blue-400" />
+                          <span className="text-xs">{new Date(booking.pickup_date).toLocaleDateString()} - {new Date(booking.dropoff_date).toLocaleDateString()}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-white/40">
+                          <Phone className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-xs font-mono">{booking.customer_phone}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-white/40">
+                          <CreditCard className="w-3.5 h-3.5 text-white/20" />
+                          <span className="text-sm font-bold text-white">£{booking.total_amount?.toFixed(2)}</span>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Booking ID */}
-                    <p className="text-xs text-gray-500">ID: {booking.id}</p>
+                    <div className="mt-3 flex items-center gap-4 text-[10px] text-white/20 uppercase tracking-widest font-mono">
+                      <span>REF: {booking.id.slice(0, 8)}...</span>
+                      <span>LOCATION: {booking.pickup_location || "LONDON"}</span>
+                    </div>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex gap-2 flex-shrink-0 items-start">
-                    {/* View Documents Button */}
+                  {/* Quick Actions */}
+                  <div className="flex flex-row lg:flex-col gap-2 justify-end lg:justify-start lg:min-w-[140px]">
                     <Button
                       onClick={() => setSelectedBooking(booking)}
                       size="sm"
                       variant="outline"
-                      className="border-blue-500/50 text-blue-400 hover:bg-blue-500/10"
+                      className="bg-zinc-950 border-white/10 text-white/60 hover:text-white hover:bg-white/5 h-9 flex-1 lg:flex-none"
                     >
-                      <FileText className="w-4 h-4 mr-1" />
-                      View Docs
+                      <FileText className="w-3.5 h-3.5 mr-2" />
+                      Documents
                     </Button>
 
                     {(booking.status?.toLowerCase().includes("pending") ||
                       booking.status?.toLowerCase() === "pending review" ||
                       booking.status?.toLowerCase() === "documents submitted") && (
-                      <Button
-                        onClick={() => handleApprove(booking.id)}
-                        size="sm"
-                        className="bg-green-500 hover:bg-green-600"
-                      >
-                        <CheckCircle className="w-4 h-4 mr-1" />
-                        Send Agreement
-                      </Button>
-                    )}
-                    
+                        <Button
+                          onClick={() => handleApprove(booking.id)}
+                          size="sm"
+                          className="bg-red-500 hover:bg-red-600 text-white font-bold h-9 flex-1 lg:flex-none"
+                        >
+                          <CheckCircle className="w-3.5 h-3.5 mr-2" />
+                          Approve
+                        </Button>
+                      )}
+
                     {(booking.status?.toLowerCase() === "approved" ||
                       booking.status?.toLowerCase() === "agreement sent" ||
                       booking.status?.toLowerCase() === "confirmed") && (
-                      <Button
-                        onClick={() => handleApprove(booking.id)}
-                        size="sm"
-                        className="bg-blue-500 hover:bg-blue-600"
-                      >
-                        <RotateCcw className="w-4 h-4 mr-1" />
-                        Re-send Agreement
-                      </Button>
-                    )}
+                        <Button
+                          onClick={() => handleApprove(booking.id)}
+                          size="sm"
+                          className="bg-blue-500 hover:bg-blue-600 text-white font-bold h-9 flex-1 lg:flex-none"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 mr-2" />
+                          Re-send
+                        </Button>
+                      )}
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="border-zinc-700 text-gray-300 bg-black">
+                        <Button variant="outline" size="sm" className="bg-black border-white/10 text-white/40 hover:text-white h-9 px-2">
                           <MoreVertical className="w-4 h-4" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent className="bg-zinc-900 border-zinc-800">
+                      <DropdownMenuContent className="bg-zinc-950 border-white/10 text-white">
+                        <DropdownMenuItem onClick={() => router.push(`/admin/bookings/${booking.id}`)} className="cursor-pointer hover:bg-white/5">
+                          <Eye className="w-4 h-4 mr-2" /> Full Details
+                        </DropdownMenuItem>
                         {booking.status?.toLowerCase() !== "completed" && (
                           <>
                             <DropdownMenuItem
                               onClick={() => handleStatusChange(booking.id, "Active")}
-                              className="text-gray-300 cursor-pointer hover:bg-zinc-800"
+                              className="cursor-pointer hover:bg-white/5"
                             >
                               Mark as Active
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => handleStatusChange(booking.id, "Completed")}
-                              className="text-gray-300 cursor-pointer hover:bg-zinc-800"
+                              className="cursor-pointer hover:bg-white/5"
                             >
                               Mark as Completed
                             </DropdownMenuItem>
@@ -436,7 +461,7 @@ export default function AdminRequestsPage() {
                         )}
                         <DropdownMenuItem
                           onClick={() => openRejectModal(booking)}
-                          className="text-red-400 cursor-pointer hover:bg-zinc-800"
+                          className="text-red-400 cursor-pointer hover:bg-white/5"
                         >
                           Reject Booking
                         </DropdownMenuItem>
@@ -465,180 +490,130 @@ export default function AdminRequestsPage() {
 
       {/* Documents Modal */}
       {selectedBooking && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300"
           onClick={() => setSelectedBooking(null)}
         >
-          <div 
-            className="bg-zinc-900 border border-zinc-800 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+          <div
+            className="liquid-glass border-white/10 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="sticky top-0 bg-zinc-900 border-b border-zinc-800 p-4 flex items-center justify-between">
+            <div className="p-6 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
               <div>
-                <h2 className="text-xl font-bold text-white">Customer Documents</h2>
-                <p className="text-sm text-gray-400">
-                  {selectedBooking.customer_name} - {selectedBooking.id}
+                <h2 className="text-xl font-bold text-white tracking-tight">Vetting Documents</h2>
+                <p className="text-xs text-white/40 mt-0.5 font-mono uppercase">
+                  {selectedBooking.customer_name} • ID: {selectedBooking.id.slice(0, 12)}
                 </p>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setSelectedBooking(null)}
-                className="text-gray-400 hover:text-white"
+                className="text-white/40 hover:text-white hover:bg-white/5 h-8 w-8 p-0 rounded-full"
               >
                 <X className="w-5 h-5" />
               </Button>
             </div>
 
             {/* Modal Content */}
-            <div className="p-6 space-y-6">
+            <div className="p-6 overflow-y-auto space-y-8">
               {/* Customer Info */}
-              <div className="bg-zinc-800/50 rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                  <User className="w-5 h-5 text-red-400" />
-                  Customer Information
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-400">Name:</span>
-                    <span className="text-white font-medium">{selectedBooking.customer_name || "N/A"}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-400">Email:</span>
-                    <span className="text-white font-medium">{selectedBooking.customer_email || "N/A"}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-400">Phone:</span>
-                    <span className="text-white font-medium">{selectedBooking.customer_phone || "N/A"}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-400">Driving License #:</span>
-                    <span className="text-white font-medium">{selectedBooking.driving_license_number || "N/A"}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-400">NI Number:</span>
-                    <span className="text-white font-medium">{selectedBooking.ni_number || "N/A"}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-400">Booking Type:</span>
-                    <span className="text-white font-medium">{selectedBooking.booking_type || "Rent"}</span>
-                  </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div>
+                  <Label className="text-[10px] text-white/30 uppercase font-bold tracking-widest mb-1.5 block">Full Name</Label>
+                  <p className="text-sm text-white font-medium">{selectedBooking.customer_name || "N/A"}</p>
+                </div>
+                <div>
+                  <Label className="text-[10px] text-white/30 uppercase font-bold tracking-widest mb-1.5 block">Contact Phone</Label>
+                  <p className="text-sm text-white font-mono">{selectedBooking.customer_phone || "N/A"}</p>
+                </div>
+                <div>
+                  <Label className="text-[10px] text-white/30 uppercase font-bold tracking-widest mb-1.5 block">Driver License #</Label>
+                  <p className="text-sm text-white font-mono">{selectedBooking.driving_license_number || "N/A"}</p>
+                </div>
+                <div>
+                  <Label className="text-[10px] text-white/30 uppercase font-bold tracking-widest mb-1.5 block">National Insurance #</Label>
+                  <p className="text-sm text-white font-mono">{selectedBooking.ni_number || "N/A"}</p>
+                </div>
+                <div>
+                  <Label className="text-[10px] text-white/30 uppercase font-bold tracking-widest mb-1.5 block">Email Address</Label>
+                  <p className="text-sm text-white">{selectedBooking.customer_email || "N/A"}</p>
+                </div>
+                <div>
+                  <Label className="text-[10px] text-white/30 uppercase font-bold tracking-widest mb-1.5 block">Booking Tier</Label>
+                  <Badge variant="outline" className="border-red-500/20 text-red-400 bg-red-500/5">{selectedBooking.booking_type || "Rent"}</Badge>
                 </div>
               </div>
 
               {/* Documents Grid */}
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-red-400" />
-                  Uploaded Documents
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                  <div className="w-1 h-1 rounded-full bg-blue-500" />
+                  Evidence Vault
                 </h3>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Driving License Front */}
-                  <DocumentCard
-                    title="Driving License (Front)"
-                    url={selectedBooking.driving_license_front_url}
-                    onPreview={(url) => setPreviewImage(url)}
-                  />
-
-                  {/* Driving License Back */}
-                  <DocumentCard
-                    title="Driving License (Back)"
-                    url={selectedBooking.driving_license_back_url}
-                    onPreview={(url) => setPreviewImage(url)}
-                  />
-
-                  {/* Proof of Address */}
-                  <DocumentCard
-                    title="Proof of Address"
-                    url={selectedBooking.proof_of_address_url}
-                    onPreview={(url) => setPreviewImage(url)}
-                  />
-
-                  {/* Bank Statement */}
-                  <DocumentCard
-                    title="Bank Statement"
-                    url={selectedBooking.bank_statement_url}
-                    onPreview={(url) => setPreviewImage(url)}
-                  />
-
-                  {/* Private Hire License Front */}
-                  {selectedBooking.private_hire_license_front_url && (
-                    <DocumentCard
-                      title="Private Hire License (Front)"
-                      url={selectedBooking.private_hire_license_front_url}
-                      onPreview={(url) => setPreviewImage(url)}
-                    />
-                  )}
-
-                  {/* Private Hire License Back */}
-                  {selectedBooking.private_hire_license_back_url && (
-                    <DocumentCard
-                      title="Private Hire License (Back)"
-                      url={selectedBooking.private_hire_license_back_url}
-                      onPreview={(url) => setPreviewImage(url)}
-                    />
-                  )}
+                  <DocumentCard title="Driving License (Front)" url={selectedBooking.driving_license_front_url} onPreview={setPreviewImage} />
+                  <DocumentCard title="Driving License (Back)" url={selectedBooking.driving_license_back_url} onPreview={setPreviewImage} />
+                  <DocumentCard title="Proof of Address" url={selectedBooking.proof_of_address_url} onPreview={setPreviewImage} />
+                  <DocumentCard title="Recent Bank Statement" url={selectedBooking.bank_statement_url} onPreview={setPreviewImage} />
+                  {selectedBooking.private_hire_license_front_url && <DocumentCard title="PCO Front" url={selectedBooking.private_hire_license_front_url} onPreview={setPreviewImage} />}
+                  {selectedBooking.private_hire_license_back_url && <DocumentCard title="PCO Back" url={selectedBooking.private_hire_license_back_url} onPreview={setPreviewImage} />}
                 </div>
 
-                {/* No Documents Warning */}
-                {!selectedBooking.driving_license_front_url && 
-                 !selectedBooking.driving_license_back_url && 
-                 !selectedBooking.proof_of_address_url && 
-                 !selectedBooking.bank_statement_url && (
-                  <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 text-yellow-400 text-center">
-                    <FileText className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p>No documents uploaded yet for this booking.</p>
+                {!selectedBooking.driving_license_front_url && !selectedBooking.driving_license_back_url && (
+                  <div className="p-10 bg-white/5 border border-dashed border-white/10 rounded-2xl text-center">
+                    <AlertTriangle className="w-8 h-8 text-white/10 mx-auto mb-2" />
+                    <p className="text-white/40 text-sm italic">Digital dossier is empty. Customer has not uploaded credentials.</p>
                   </div>
                 )}
               </div>
+            </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 pt-4 border-t border-zinc-800">
-                <Button
-                  onClick={() => {
-                    setSelectedBooking(null)
-                    handleApprove(selectedBooking.id)
-                  }}
-                  className={`flex-1 ${
-                    selectedBooking.status?.toLowerCase() === "approved" ||
-                    selectedBooking.status?.toLowerCase() === "agreement sent" ||
-                    selectedBooking.status?.toLowerCase() === "confirmed"
-                      ? "bg-blue-500 hover:bg-blue-600"
-                      : "bg-green-500 hover:bg-green-600"
+            {/* Action Buttons */}
+            <div className="p-6 border-t border-white/10 bg-white/[0.02] flex flex-wrap gap-3">
+              <Button
+                onClick={() => {
+                  setSelectedBooking(null)
+                  handleApprove(selectedBooking.id)
+                }}
+                className={`flex-1 h-12 font-bold ${selectedBooking.status?.toLowerCase() === "approved" ||
+                  selectedBooking.status?.toLowerCase() === "agreement sent" ||
+                  selectedBooking.status?.toLowerCase() === "confirmed"
+                  ? "bg-blue-600 hover:bg-blue-700 text-white"
+                  : "bg-red-500 hover:bg-red-600 text-white"
                   }`}
-                >
-                  {selectedBooking.status?.toLowerCase() === "approved" ||
-                   selectedBooking.status?.toLowerCase() === "agreement sent" ||
-                   selectedBooking.status?.toLowerCase() === "confirmed" ? (
-                    <>
-                      <RotateCcw className="w-4 h-4 mr-2" />
-                      Re-send Agreement
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Send Agreement
-                    </>
-                  )}
-                </Button>
-                <Button
-                  onClick={() => openRejectModal(selectedBooking)}
-                  variant="outline"
-                  className="border-red-500/50 text-red-400 hover:bg-red-500/10"
-                >
-                  <XCircle className="w-4 h-4 mr-1" />
-                  Reject
-                </Button>
-                <Button
-                  onClick={() => setSelectedBooking(null)}
-                  variant="outline"
-                  className="border-zinc-700 text-gray-300"
-                >
-                  Close
-                </Button>
-              </div>
+              >
+                {selectedBooking.status?.toLowerCase() === "approved" ||
+                  selectedBooking.status?.toLowerCase() === "agreement sent" ||
+                  selectedBooking.status?.toLowerCase() === "confirmed" ? (
+                  <>
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                    Re-issue Agreement
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    Approve & Issue Agreement
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={() => openRejectModal(selectedBooking)}
+                variant="outline"
+                className="border-white/10 text-red-400 hover:bg-red-500/10 h-12 px-6"
+              >
+                <XCircle className="w-4 h-4 mr-2" />
+                Reject
+              </Button>
+              <Button
+                onClick={() => setSelectedBooking(null)}
+                variant="outline"
+                className="border-white/10 text-white/40 hover:text-white h-12 px-6"
+              >
+                Close Dossier
+              </Button>
             </div>
           </div>
         </div>
@@ -646,30 +621,30 @@ export default function AdminRequestsPage() {
 
       {/* Rejection Modal */}
       {rejectingBooking && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+        <div
+          className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300"
           onClick={() => setRejectingBooking(null)}
         >
-          <div 
-            className="bg-zinc-900 border border-zinc-800 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
+          <div
+            className="liquid-glass border-white/10 rounded-2xl max-w-lg w-full overflow-hidden animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="sticky top-0 bg-zinc-900 border-b border-zinc-800 p-4 flex items-center justify-between">
+            <div className="p-6 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center border border-red-500/20">
                   <XCircle className="w-5 h-5 text-red-500" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-white">Reject Booking</h2>
-                  <p className="text-sm text-gray-400">{rejectingBooking.id}</p>
+                  <h2 className="text-lg font-bold text-white tracking-tight">Reject Request</h2>
+                  <p className="text-xs text-white/40 font-mono uppercase truncate max-w-[200px]">{rejectingBooking.id}</p>
                 </div>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setRejectingBooking(null)}
-                className="text-gray-400 hover:text-white"
+                className="text-white/40 hover:text-white hover:bg-white/5 h-8 w-8 p-0 rounded-full"
               >
                 <X className="w-5 h-5" />
               </Button>
@@ -677,27 +652,24 @@ export default function AdminRequestsPage() {
 
             {/* Modal Content */}
             <div className="p-6 space-y-6">
-              {/* Customer Info */}
-              <div className="bg-zinc-800/50 rounded-lg p-4">
-                <p className="text-sm text-gray-400 mb-1">Customer</p>
-                <p className="text-white font-medium">{rejectingBooking.customer_name}</p>
-                <p className="text-gray-400 text-sm">{rejectingBooking.customer_email}</p>
+              <div className="bg-white/5 p-4 rounded-xl border border-white/5">
+                <p className="text-[10px] text-white/30 font-bold uppercase tracking-widest mb-1">Target Client</p>
+                <p className="text-sm text-white font-medium">{rejectingBooking.customer_name}</p>
+                <p className="text-white/40 text-xs">{rejectingBooking.customer_email}</p>
               </div>
 
-              {/* Rejection Reason */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Rejection Reason *
+                <label className="text-[10px] text-white/30 font-bold uppercase tracking-widest mb-3 block">
+                  Select Verdict
                 </label>
                 <div className="space-y-2">
                   {Object.entries(REJECTION_REASONS).map(([key, value]) => (
                     <label
                       key={key}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                        rejectionReason === value
-                          ? "border-red-500 bg-red-500/10"
-                          : "border-zinc-700 bg-zinc-800/50 hover:border-zinc-600"
-                      }`}
+                      className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${rejectionReason === value
+                        ? "border-red-500 bg-red-500/10"
+                        : "border-white/5 bg-white/5 hover:bg-white/[0.08]"
+                        }`}
                     >
                       <input
                         type="radio"
@@ -706,7 +678,6 @@ export default function AdminRequestsPage() {
                         checked={rejectionReason === value}
                         onChange={(e) => {
                           setRejectionReason(e.target.value)
-                          // Auto-set canResubmit based on reason type
                           if (value.includes("Document Issue") || value.includes("Missing Documents")) {
                             setCanResubmit(true)
                           } else if (value.includes("Security Issue")) {
@@ -716,34 +687,32 @@ export default function AdminRequestsPage() {
                         className="mt-1 accent-red-500"
                       />
                       <div>
-                        <p className="text-white text-sm font-medium">{value.split(" - ")[0]}</p>
-                        <p className="text-gray-400 text-xs">{value.split(" - ")[1]}</p>
+                        <p className="text-white text-xs font-bold">{value.split(" - ")[0]}</p>
+                        <p className="text-white/40 text-[10px] mt-0.5">{value.split(" - ")[1]}</p>
                       </div>
                     </label>
                   ))}
                 </div>
               </div>
 
-              {/* Additional Notes */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Additional Notes (Optional)
+                <label className="text-[10px] text-white/30 font-bold uppercase tracking-widest mb-2 block">
+                  Confidential Arbiter Notes
                 </label>
                 <Textarea
                   value={rejectionNotes}
                   onChange={(e) => setRejectionNotes(e.target.value)}
-                  placeholder="Add any specific details about why the booking was rejected..."
-                  className="bg-zinc-800 border-zinc-700 text-white placeholder-gray-500 min-h-[100px]"
+                  placeholder="Internal notes regarding rejection decision..."
+                  className="bg-zinc-950 border-white/10 text-white placeholder:text-white/20 text-xs min-h-[80px]"
                 />
               </div>
 
-              {/* Can Resubmit Toggle */}
-              <div className="flex items-center justify-between p-4 bg-zinc-800/50 rounded-lg">
+              <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/5">
                 <div className="flex items-center gap-3">
                   <RotateCcw className="w-5 h-5 text-blue-400" />
                   <div>
-                    <p className="text-white text-sm font-medium">Allow Document Resubmission</p>
-                    <p className="text-gray-400 text-xs">Customer can upload new documents and resubmit</p>
+                    <p className="text-white text-xs font-bold">Resubmission Clause</p>
+                    <p className="text-white/40 text-[10px]">Allow client to update credentials</p>
                   </div>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -753,49 +722,38 @@ export default function AdminRequestsPage() {
                     onChange={(e) => setCanResubmit(e.target.checked)}
                     className="sr-only peer"
                   />
-                  <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+                  <div className="w-11 h-6 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
                 </label>
               </div>
 
-              {/* Warning */}
               {!canResubmit && (
-                <div className="flex items-start gap-3 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
-                  <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-red-400 text-sm font-medium">Permanent Rejection</p>
-                    <p className="text-red-300/70 text-xs">
-                      The customer will not be able to resubmit documents for this booking.
-                    </p>
-                  </div>
+                <div className="flex items-start gap-3 p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
+                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                  <p className="text-red-300/60 text-[10px] uppercase font-bold tracking-tighter">
+                    Permanent Blacklist: Client cannot resubmit for this request.
+                  </p>
                 </div>
               )}
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 pt-4 border-t border-zinc-800">
+              <div className="flex gap-3 pt-4">
                 <Button
                   onClick={handleRejectBooking}
                   disabled={!rejectionReason || isRejecting}
-                  className="bg-red-500 hover:bg-red-600 flex-1 disabled:opacity-50"
+                  className="bg-red-500 hover:bg-red-600 h-11 flex-1 font-bold text-white disabled:opacity-50"
                 >
                   {isRejecting ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                      Rejecting...
-                    </>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
                   ) : (
-                    <>
-                      <XCircle className="w-4 h-4 mr-2" />
-                      Confirm Rejection
-                    </>
+                    "Execute Rejection"
                   )}
                 </Button>
                 <Button
                   onClick={() => setRejectingBooking(null)}
                   variant="outline"
-                  className="border-zinc-700 text-gray-300"
+                  className="border-white/10 text-white/40 hover:text-white h-11 px-6 text-xs"
                   disabled={isRejecting}
                 >
-                  Cancel
+                  Abort
                 </Button>
               </div>
             </div>
@@ -805,7 +763,7 @@ export default function AdminRequestsPage() {
 
       {/* Image Preview Modal */}
       {previewImage && (
-        <div 
+        <div
           className="fixed inset-0 z-[60] bg-black/95 flex items-center justify-center p-4"
           onClick={() => setPreviewImage(null)}
         >
@@ -843,22 +801,20 @@ export default function AdminRequestsPage() {
 }
 
 // Document Card Component
-function DocumentCard({ 
-  title, 
-  url, 
-  onPreview 
-}: { 
+function DocumentCard({
+  title,
+  url,
+  onPreview
+}: {
   title: string
   url?: string
-  onPreview: (url: string) => void 
+  onPreview: (url: string) => void
 }) {
   if (!url) {
     return (
-      <div className="bg-zinc-800/30 border border-zinc-700/50 rounded-lg p-4">
-        <h4 className="text-sm font-medium text-gray-400 mb-2">{title}</h4>
-        <div className="flex items-center justify-center h-32 bg-zinc-800/50 rounded-lg">
-          <p className="text-gray-500 text-sm">Not uploaded</p>
-        </div>
+      <div className="bg-white/5 border border-dashed border-white/10 rounded-xl p-4 flex flex-col items-center justify-center min-h-[140px]">
+        <h4 className="text-[10px] font-bold text-white/20 uppercase tracking-widest mb-3">{title}</h4>
+        <div className="text-white/10 text-xs italic">Missing Files</div>
       </div>
     )
   }
@@ -867,42 +823,45 @@ function DocumentCard({
   const isPdf = url.match(/\.pdf$/i)
 
   return (
-    <div className="bg-zinc-800/30 border border-zinc-700/50 rounded-lg p-4 hover:border-zinc-600 transition">
-      <h4 className="text-sm font-medium text-white mb-2 flex items-center gap-2">
-        <CheckCircle className="w-4 h-4 text-green-400" />
-        {title}
-      </h4>
-      
+    <div className="bg-white/5 border border-white/10 rounded-xl p-4 hover:bg-white/10 transition-all group">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="text-[10px] font-bold text-white/60 uppercase tracking-widest flex items-center gap-2">
+          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+          {title}
+        </h4>
+        {isPdf && <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/20 text-[8px] h-4">PDF</Badge>}
+      </div>
+
       {isImage ? (
-        <div 
-          className="relative h-32 bg-zinc-800 rounded-lg overflow-hidden cursor-pointer group"
+        <div
+          className="relative aspect-video bg-black/40 rounded-lg overflow-hidden cursor-pointer group/img border border-white/5"
           onClick={() => onPreview(url)}
         >
           <Image
             src={url}
             alt={title}
             fill
-            className="object-cover"
+            className="object-cover transition-transform duration-500 group-hover/img:scale-110"
           />
-          <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-            <Eye className="w-8 h-8 text-white" />
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity backdrop-blur-[2px]">
+            <Eye className="w-6 h-6 text-white" />
           </div>
         </div>
       ) : (
-        <div className="h-32 bg-zinc-800 rounded-lg flex items-center justify-center">
-          <FileText className="w-12 h-12 text-gray-400" />
+        <div className="aspect-video bg-black/40 rounded-lg flex flex-col items-center justify-center border border-white/5">
+          <FileText className="w-8 h-8 text-white/20 mb-2" />
+          <span className="text-[10px] text-white/40 font-mono tracking-tighter">ENCRYPTED BINARY</span>
         </div>
       )}
 
-      <div className="flex gap-2 mt-3">
+      <div className="flex gap-2 mt-4">
         {isImage && (
           <Button
             size="sm"
             variant="outline"
-            className="flex-1 border-zinc-600 text-gray-300 text-xs"
+            className="flex-1 bg-white/5 border-white/10 text-white/60 hover:text-white text-[10px] font-bold h-8"
             onClick={() => onPreview(url)}
           >
-            <Eye className="w-3 h-3 mr-1" />
             Preview
           </Button>
         )}
@@ -915,10 +874,9 @@ function DocumentCard({
           <Button
             size="sm"
             variant="outline"
-            className="w-full border-zinc-600 text-gray-300 text-xs"
+            className="w-full bg-white/5 border-white/10 text-white/60 hover:text-white text-[10px] font-bold h-8"
           >
-            <ExternalLink className="w-3 h-3 mr-1" />
-            {isPdf ? "Open PDF" : "Open"}
+            {isPdf ? "Open Vault" : "Download"}
           </Button>
         </a>
       </div>

@@ -69,7 +69,12 @@ export default function AdminDashboard() {
   const loadStats = async () => {
     setIsLoading(true)
     try {
-      const data = await getAdminStats()
+      // Add timeout to prevent infinite loading
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Stats loading timed out")), 10000)
+      )
+
+      const data = await Promise.race([getAdminStats(), timeoutPromise]) as Awaited<ReturnType<typeof getAdminStats>>
 
       const now = new Date()
       const overdue =
@@ -101,10 +106,31 @@ export default function AdminDashboard() {
       })
     } catch (error) {
       console.error("Error loading stats:", error)
+      // Set default stats on error so page still loads
+      setStats({
+        totalBookings: 0,
+        pending: 0,
+        approved: 0,
+        onRent: 0,
+        overdue: 0,
+        completed: 0,
+        rejected: 0,
+        totalCars: 0,
+        availableCars: 0,
+        totalCustomers: 0,
+        profit: {
+          all: 0,
+          today: 0,
+          yesterday: 0,
+          week: 0,
+          month: 0,
+        },
+      })
     } finally {
       setIsLoading(false)
     }
   }
+
 
   const dashboardPages: DashboardPage[] = [
     {
@@ -135,7 +161,7 @@ export default function AdminDashboard() {
     },
     {
       name: "Vehicles",
-      href: "/admin/cars",
+      href: "/admin/vehicles",
       icon: Car,
       description: "Manage your entire vehicle fleet",
       color: "from-purple-500/20 to-purple-600/20",

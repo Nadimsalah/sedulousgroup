@@ -182,6 +182,14 @@ export interface PCNTicket {
   uploadedBy?: string
 }
 
+export interface PCNTicketWithDetails extends PCNTicket {
+  customerName?: string
+  customerEmail?: string
+  carName?: string
+  registrationNumber?: string
+  agreementNumber?: string
+}
+
 export interface DamageReport {
   id: string
   agreementId?: string
@@ -627,9 +635,9 @@ class Database {
       thumbnail: thumbnail,
       stories: Array.isArray(data.images)
         ? data.images.map((img: any) => ({
-            image: typeof img === "string" ? img : img.image || "",
-            duration: typeof img === "object" ? img.duration || 5000 : 5000,
-          }))
+          image: typeof img === "string" ? img : img.image || "",
+          duration: typeof img === "object" ? img.duration || 5000 : 5000,
+        }))
         : [],
       status: "Published" as const,
       rentalType: data.rental_type || "Rent", // Added rental type to return value
@@ -679,9 +687,9 @@ class Database {
       thumbnail: data.thumbnail,
       stories: Array.isArray(data.images)
         ? data.images.map((img: any) => ({
-            image: typeof img === "string" ? img : img.image || "",
-            duration: typeof img === "object" ? img.duration || 5000 : 5000,
-          }))
+          image: typeof img === "string" ? img : img.image || "",
+          duration: typeof img === "object" ? img.duration || 5000 : 5000,
+        }))
         : [],
       status: "Published" as const,
       rentalType: data.rental_type || "Rent", // Added rental type to return value
@@ -1375,23 +1383,23 @@ class Database {
 
     return data
       ? {
-          id: data.id,
-          username: data.username,
-          fullName: data.full_name,
-          avatarUrl: data.avatar_url,
-          phone: data.phone,
-          drivingLicenseNumber: data.driving_license_number,
-          drivingLicenseFrontUrl: data.driving_license_front_url,
-          drivingLicenseBackUrl: data.driving_license_back_url,
-          proofOfAddressUrl: data.proof_of_address_url,
-          niNumber: data.ni_number,
-          bankStatementUrl: data.bank_statement_url,
-          privateHireLicenseFrontUrl: data.private_hire_license_front_url,
-          privateHireLicenseBackUrl: data.private_hire_license_back_url,
-          documentsUpdatedAt: data.documents_updated_at,
-          createdAt: data.created_at,
-          updatedAt: data.updated_at,
-        }
+        id: data.id,
+        username: data.username,
+        fullName: data.full_name,
+        avatarUrl: data.avatar_url,
+        phone: data.phone,
+        drivingLicenseNumber: data.driving_license_number,
+        drivingLicenseFrontUrl: data.driving_license_front_url,
+        drivingLicenseBackUrl: data.driving_license_back_url,
+        proofOfAddressUrl: data.proof_of_address_url,
+        niNumber: data.ni_number,
+        bankStatementUrl: data.bank_statement_url,
+        privateHireLicenseFrontUrl: data.private_hire_license_front_url,
+        privateHireLicenseBackUrl: data.private_hire_license_back_url,
+        documentsUpdatedAt: data.documents_updated_at,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      }
       : null
   }
 
@@ -1684,7 +1692,7 @@ class Database {
     // Store customer signature - ALWAYS prefer base64 if available (same as admin flow)
     // This avoids storage upload issues and works directly with PDF generation
     const customerSignatureToStore = signatureBase64 || signatureUrl
-    
+
     // Store signatures - preserve admin signature if it exists
     if (isAdminSignature) {
       // Admin signature exists - store both in JSON structure
@@ -1696,12 +1704,12 @@ class Database {
       // No admin signature - store customer signature directly as base64 (preferred) or URL
       updateData.customer_signature_data = customerSignatureToStore
     }
-    
+
     // Only store URL in signed_agreement_url if it's a real URL (not placeholder)
     if (signatureUrl && signatureUrl !== "base64-signature-stored" && signatureUrl.startsWith("http")) {
       updateData.signed_agreement_url = signatureUrl
     }
-    
+
     console.log("[Database] Storing customer signature:", {
       hasBase64: !!signatureBase64,
       hasUrl: !!signatureUrl,
@@ -2131,7 +2139,7 @@ class Database {
     }
 
     let allItems = data || []
-    
+
     // If cursor exists, filter out items that should be before the cursor
     if (cursor) {
       const decoded = this.decodeCursor(cursor)
@@ -2150,7 +2158,7 @@ class Database {
         })
       }
     }
-    
+
     // Sort to ensure correct order (created_at DESC, id DESC)
     allItems.sort((a, b) => {
       const dateA = new Date(a.created_at).getTime()
@@ -2160,7 +2168,7 @@ class Database {
       }
       return b.id.localeCompare(a.id) // DESC by id
     })
-    
+
     const hasMore = allItems.length > clampedLimit
     const items = hasMore ? allItems.slice(0, clampedLimit) : allItems
 
@@ -2225,18 +2233,18 @@ class Database {
       ticketsByAgreement[id] = []
     })
 
-    ;(data || []).forEach((ticket) => {
-      try {
-        const mapped = this.mapPCNFromDb(ticket)
-        const agreementId = ticket.agreement_id
-        if (!ticketsByAgreement[agreementId]) {
-          ticketsByAgreement[agreementId] = []
+      ; (data || []).forEach((ticket) => {
+        try {
+          const mapped = this.mapPCNFromDb(ticket)
+          const agreementId = ticket.agreement_id
+          if (!ticketsByAgreement[agreementId]) {
+            ticketsByAgreement[agreementId] = []
+          }
+          ticketsByAgreement[agreementId].push(mapped)
+        } catch (err) {
+          console.error("[Database] Error mapping PCN ticket:", err, ticket)
         }
-        ticketsByAgreement[agreementId].push(mapped)
-      } catch (err) {
-        console.error("[Database] Error mapping PCN ticket:", err, ticket)
-      }
-    })
+      })
 
     console.log(`[Database] Batch found ${data?.length || 0} PCN tickets across ${agreementIds.length} agreements`)
     return ticketsByAgreement
@@ -2541,6 +2549,51 @@ class Database {
       uploadedBy: data.uploaded_by || undefined,
     }
   }
+
+  private mapPCNWithDetailsFromDb(data: any): PCNTicketWithDetails {
+    const ticket = this.mapPCNFromDb(data)
+    return {
+      ...ticket,
+      customerName: data.user_profiles?.full_name,
+      customerEmail: data.user_profiles?.email,
+      carName: data.cars?.name,
+      registrationNumber: data.cars?.registration_number,
+      agreementNumber: data.agreements?.agreement_number,
+    }
+  }
+
+  async getPCNTicketsWithDetails(filters?: { status?: string; searchTerm?: string }): Promise<PCNTicketWithDetails[]> {
+    const supabase = await this.getAdminClient()
+    if (!supabase) return []
+
+    let query = supabase
+      .from("pcn_tickets")
+      .select(`
+        *,
+        cars (name, registration_number),
+        user_profiles (full_name, email),
+        agreements (agreement_number)
+      `)
+      .order("created_at", { ascending: false })
+
+    if (filters?.status && filters.status !== "all") {
+      query = query.eq("status", filters.status)
+    }
+
+    if (filters?.searchTerm) {
+      query = query.or(`ticket_number.ilike.%${filters.searchTerm}%,notes.ilike.%${filters.searchTerm}%`)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      console.error("[Database] Error fetching PCN tickets with details:", error)
+      return []
+    }
+
+    return (data || []).map((t: any) => this.mapPCNWithDetailsFromDb(t))
+  }
+
 
   private mapDamageReportFromDb(data: any): DamageReport {
     return {

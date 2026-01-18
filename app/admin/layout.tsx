@@ -112,6 +112,7 @@ export default function AdminLayout({
     { name: "Dashboard", href: "/admin", icon: Home },
     { name: "Bookings Schedule", href: "/admin/requests", icon: Calendar },
     { name: "Active Bookings", href: "/admin/active-bookings", icon: CheckCircle },
+    { name: "Parking", href: "/admin/parking", icon: Car },
     {
       name: "Vehicles",
       icon: Car,
@@ -269,11 +270,10 @@ export default function AdminLayout({
                 {!item.subItems ? (
                   <Link
                     href={item.href!}
-                    className={`group flex gap-x-3 rounded-lg p-3 text-sm font-medium transition-colors ${
-                      pathname === item.href
+                    className={`group flex gap-x-3 rounded-lg p-3 text-sm font-medium transition-colors ${pathname === item.href
                         ? "bg-red-500 text-white shadow-lg shadow-red-500/20"
                         : "text-white/70 hover:text-white hover:bg-white/10"
-                    }`}
+                      }`}
                   >
                     <item.icon className="h-5 w-5 shrink-0" />
                     {item.name}
@@ -296,11 +296,10 @@ export default function AdminLayout({
                           <li key={subItem.name}>
                             <Link
                               href={subItem.href}
-                              className={`block rounded-lg px-3 py-2 text-sm transition-colors ${
-                                pathname === subItem.href
+                              className={`block rounded-lg px-3 py-2 text-sm transition-colors ${pathname === subItem.href
                                   ? "bg-red-500/20 text-red-300 font-medium"
                                   : "text-white/60 hover:text-white hover:bg-white/5"
-                              }`}
+                                }`}
                             >
                               {subItem.name}
                             </Link>

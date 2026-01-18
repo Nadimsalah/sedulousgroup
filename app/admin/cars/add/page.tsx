@@ -219,6 +219,7 @@ export default function AddCarsPage() {
     safetyFeatures: [] as string[],
     deviceFeatures: [] as string[],
     convenienceFeatures: [] as string[],
+    registrationNumber: "",
   })
 
   const [previewImages, setPreviewImages] = useState<string[]>([])
@@ -326,17 +327,11 @@ export default function AddCarsPage() {
         fuelType: carData.fuelType,
         rating: Number.parseFloat(carData.rating),
         description: carData.description,
-        features: allFeatures,
         status: "Published" as const,
-        specs: {
-          passengers: Number.parseInt(carData.passengers),
-          luggage: Number.parseInt(carData.luggage),
-          transmission: carData.transmission,
-          fuelType: carData.fuelType,
-        },
         safetyFeatures: carData.safetyFeatures,
         deviceFeatures: carData.deviceFeatures,
         convenienceFeatures: carData.convenienceFeatures,
+        registrationNumber: carData.registrationNumber,
       }
 
       console.log("[v0] Car data prepared:", carToAdd)
@@ -406,6 +401,19 @@ export default function AddCarsPage() {
                     onChange={(e) => setCarData({ ...carData, name: e.target.value })}
                     placeholder="e.g., Mercedes A-Class"
                     required
+                    className="w-full bg-white/5 border-white/10 text-white placeholder:text-white/40"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="registrationNumber" className="text-sm font-medium text-white/70 mb-2 block">
+                    VRN (Registration Number) <span className="text-white/40 font-normal">(Optional)</span>
+                  </Label>
+                  <Input
+                    id="registrationNumber"
+                    value={carData.registrationNumber}
+                    onChange={(e) => setCarData({ ...carData, registrationNumber: e.target.value })}
+                    placeholder="e.g., AB12 CDE"
                     className="w-full bg-white/5 border-white/10 text-white placeholder:text-white/40"
                   />
                 </div>

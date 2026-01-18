@@ -539,7 +539,7 @@ export default function PCNTicketsPage() {
                     )}
                   </div>
                   <div className="flex gap-2">
-                    <a href={`/car/${carId}`} target="_blank" rel="noopener noreferrer">
+                    <a href={`/admin/bookings/${booking.id}`} target="_blank" rel="noopener noreferrer">
                       <Button
                         variant="outline"
                         size="sm"

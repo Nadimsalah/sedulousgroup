@@ -71,6 +71,7 @@ export interface BookingWithDetails {
   car_brand: string | null
   car_image: string | null
   car_rental_type: string | null
+  car_registration_number: string | null
   // Document fields
   driving_license_number?: string
   ni_number?: string
@@ -120,10 +121,10 @@ export async function getAllBookingsAction(): Promise<{
     // Fetch cars
     let carsMap: Record<string, any> = {}
     if (carIds.length > 0) {
-      const { data: cars } = await supabase.from("cars").select("id, name, brand, image, rental_type").in("id", carIds)
+      const { data: cars } = await supabase.from("cars").select("id, name, brand, image, rental_type, registration_number").in("id", carIds)
 
       if (cars) {
-        carsMap = Object.fromEntries(cars.map((c) => [c.id, c]))
+        carsMap = Object.fromEntries(cars.map((c: any) => [c.id, c]))
       }
     }
 
@@ -151,6 +152,7 @@ export async function getAllBookingsAction(): Promise<{
         car_brand: car?.brand || null,
         car_image: car?.image || null,
         car_rental_type: car?.rental_type || null,
+        car_registration_number: car?.registration_number || null,
         // Document fields (may not exist in older records)
         driving_license_number: booking.driving_license_number ?? undefined,
         ni_number: booking.ni_number ?? undefined,
@@ -240,7 +242,7 @@ export async function rejectBookingAction(
         .from("bookings")
         .update(updateData)
         .eq("id", bookingId)
-      
+
       if (basicError) {
         console.error("[v0] Error rejecting booking (basic):", basicError)
         return { success: false, error: basicError.message }
@@ -266,14 +268,14 @@ export async function getBookingForResubmitAction(
 ): Promise<{ success: boolean; booking?: any; error?: string }> {
   try {
     console.log("[v0] getBookingForResubmitAction called for:", bookingId)
-    
+
     // Get current user to verify ownership
     const { user: authUser, error: authError } = await getCurrentUser()
     if (authError || !authUser) {
       console.log("[v0] Not authenticated for resubmit")
       return { success: false, error: "Not authenticated" }
     }
-    
+
     const supabase = createAdminSupabase()
 
     const { data: booking, error } = await supabase
@@ -286,12 +288,12 @@ export async function getBookingForResubmitAction(
       console.log("[v0] Booking not found:", error?.message)
       return { success: false, error: "Booking not found" }
     }
-    
+
     // Verify user owns this booking
-    const isOwner = booking.user_id === authUser.id || 
-                    booking.customer_id === authUser.id ||
-                    booking.customer_email === authUser.email
-    
+    const isOwner = booking.user_id === authUser.id ||
+      booking.customer_id === authUser.id ||
+      booking.customer_email === authUser.email
+
     console.log("[v0] Ownership check:", {
       booking_user_id: booking.user_id,
       booking_customer_id: booking.customer_id,
@@ -300,7 +302,7 @@ export async function getBookingForResubmitAction(
       auth_user_email: authUser.email,
       isOwner
     })
-    
+
     if (!isOwner) {
       return { success: false, error: "You don't have permission to access this booking" }
     }
@@ -309,12 +311,12 @@ export async function getBookingForResubmitAction(
     const statusLower = (booking.status || "").toLowerCase()
     const isDocumentsRejected = statusLower === "documents rejected"
     const canResubmit = isDocumentsRejected
-    
+
     console.log("[v0] Booking status:", booking.status, "statusLower:", statusLower)
     console.log("[v0] isDocumentsRejected:", isDocumentsRejected, "canResubmit:", canResubmit)
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       booking: {
         ...booking,
         can_resubmit: canResubmit
@@ -371,7 +373,7 @@ export async function resubmitBookingDocumentsAction(
         .from("bookings")
         .update(basicUpdate)
         .eq("id", bookingId)
-      
+
       if (basicError) {
         console.error("[v0] Error resubmitting documents (basic):", basicError)
         return { success: false, error: basicError.message }
@@ -389,5 +391,25 @@ export async function resubmitBookingDocumentsAction(
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
     }
+  }
+}
+
+export async function getFleetStatsAction(): Promise<{
+  success: boolean
+  totalCars: number
+  error?: string
+}> {
+  try {
+    const supabase = createAdminSupabase()
+    const { count, error } = await supabase.from("cars").select("*", { count: "exact", head: true })
+
+    if (error) {
+      console.error("[v0] Error fetching fleet stats:", error)
+      return { success: false, totalCars: 0, error: error.message }
+    }
+
+    return { success: true, totalCars: count || 0 }
+  } catch (error) {
+    return { success: false, totalCars: 0, error: "Failed to fetch stats" }
   }
 }

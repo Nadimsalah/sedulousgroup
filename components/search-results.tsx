@@ -39,8 +39,23 @@ export function SearchResults() {
     const loadCars = async () => {
       try {
         setLoading(true)
-        const allCars = await getCarsAction()
-        setCars(allCars.filter((car) => car.status === "Published"))
+
+        const pickup = searchParams.get("pickup")
+        const dropoff = searchParams.get("return")
+
+        let fetchedCars: Car[] = []
+
+        if (pickup && dropoff) {
+          const { getAvailableCars } = await import("@/app/actions/availability")
+          const result = await getAvailableCars(pickup, dropoff)
+          if (result.success && result.data) {
+            fetchedCars = result.data as unknown as Car[]
+          }
+        } else {
+          fetchedCars = await getCarsAction()
+        }
+
+        setCars(fetchedCars.filter((car) => car.status === "Published"))
       } catch (error) {
         console.error("Error loading cars:", error)
       } finally {
@@ -48,7 +63,7 @@ export function SearchResults() {
       }
     }
     loadCars()
-  }, [])
+  }, [searchParams])
 
   useEffect(() => {
     setPickupLocation(searchParams.get("location") || "")
@@ -273,7 +288,7 @@ export function SearchResults() {
                   <div>
                     <h3 className="text-xl font-bold text-white mb-1">{car.name}</h3>
                     <div className="flex flex-wrap gap-1.5">
-                      {car.features?.slice(0, 2).map((feature) => (
+                      {car.safetyFeatures?.slice(0, 2).map((feature) => (
                         <span key={feature} className="text-xs text-neutral-400">
                           {feature}
                         </span>

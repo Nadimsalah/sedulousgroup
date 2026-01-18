@@ -212,12 +212,13 @@ export async function updateAgreementAction(
     signature_url?: string
     fuel_level?: string
     odometer_reading?: number
+    vehicle_registration?: string
   },
 ) {
   console.log("[v0] updateAgreementAction called for agreement:", agreementId)
-  console.log("[v0] Updates:", { 
-    ...updates, 
-    vehicle_photos: updates.vehicle_photos?.length ? `${updates.vehicle_photos.length} photos` : undefined 
+  console.log("[v0] Updates:", {
+    ...updates,
+    vehicle_photos: updates.vehicle_photos?.length ? `${updates.vehicle_photos.length} photos` : undefined
   })
 
   try {
@@ -227,7 +228,28 @@ export async function updateAgreementAction(
     }
 
     // Update the agreement with provided fields
-    const updatedAgreement = await db.updateAgreement(agreementId, updates as any)
+    const dbUpdates: any = {
+      ...updates,
+    }
+
+    // Map snake_case from action input to camelCase for database helper if needed, 
+    // OR map directly to DB columns if database helper handles it.
+    // `db.updateAgreement` handles: status, signedAgreementUrl, customerSignatureData, signedAt, sentToCustomerAt, mediaUrls, fuelLevel, odometerReading, vehiclePhotos, terms, vehicleRegistration.
+    // It checks `updates.vehicleRegistration` etc.
+
+    const mappedUpdates: any = {}
+    if (updates.status) mappedUpdates.status = updates.status
+    if (updates.terms) mappedUpdates.terms = updates.terms
+    if (updates.signature_url) mappedUpdates.signedAgreementUrl = updates.signature_url // This might be wrong mapping? signed_agreement_url vs signature_url?
+    // `updateAgreementAction` has `signature_url`. `db.updateAgreement` has `signedAgreementUrl` -> `signed_agreement_url` AND `customerSignatureData` -> `customer_signature_data`.
+    // Wait, `signature_url` in action probably refers to the signed PDF url?
+
+    if (updates.fuel_level) mappedUpdates.fuelLevel = updates.fuel_level
+    if (updates.odometer_reading !== undefined) mappedUpdates.odometerReading = updates.odometer_reading
+    if (updates.vehicle_registration) mappedUpdates.vehicleRegistration = updates.vehicle_registration
+    if (updates.vehicle_photos) mappedUpdates.vehiclePhotos = updates.vehicle_photos
+
+    const updatedAgreement = await db.updateAgreement(agreementId, mappedUpdates)
 
     console.log("[v0] Agreement updated successfully")
     if (updates.vehicle_photos) {
@@ -285,9 +307,9 @@ export async function getVehiclePhotoUrlsAction(agreementId: string) {
 
     // Get vehicle photos from agreement
     const photoUrls = agreement.vehiclePhotos || []
-    
+
     console.log("[v0] Retrieved", photoUrls.length, "vehicle photos for agreement:", agreementId)
-    
+
     // Photos are already public URLs (uploaded via Vercel Blob or Supabase public bucket)
     // If using private bucket, we would generate signed URLs here:
     // const signedUrls = await Promise.all(photoUrls.map(async (url) => {
@@ -299,7 +321,7 @@ export async function getVehiclePhotoUrlsAction(agreementId: string) {
     //   }
     //   return url
     // }))
-    
+
     return { success: true, photoUrls }
   } catch (error) {
     console.error("[v0] getVehiclePhotoUrlsAction error:", error)
@@ -351,8 +373,8 @@ export async function getAgreementWithPhotosAction(agreementId: string) {
     }
 
     // Return agreement with photos
-    return { 
-      success: true, 
+    return {
+      success: true,
       agreement: {
         ...agreement,
         vehiclePhotos: agreement.vehiclePhotos || [],

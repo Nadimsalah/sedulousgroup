@@ -59,6 +59,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Rental dates are required" }, { status: 400 })
     }
 
+    // Check availability (but allow overbooking per admin request)
+    const { checkCarAvailability } = await import("@/app/actions/availability")
+    const isAvailable = await checkCarAvailability(carId, pickupDate, dropoffDate)
+
+    if (!isAvailable) {
+      console.warn(`[Booking] Overbooking allowed for car ${carId} on ${pickupDate}-${dropoffDate}`)
+      // We proceed regardless of availability
+    }
+
     const supabase = createAdminSupabase()
 
     // Generate unique booking ID

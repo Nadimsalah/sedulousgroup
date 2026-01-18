@@ -64,12 +64,12 @@ export async function createPCNTicketAction(data: {
   } catch (error) {
     console.error("[v0] createPCNTicketAction error:", error)
     const errorMessage = error instanceof Error ? error.message : "Unknown error"
-    
+
     // Provide clearer error messages for UUID validation
     if (errorMessage.includes("invalid input syntax for type uuid")) {
       return { success: false, error: "Invalid UUID format. Please ensure all ID fields are valid UUIDs." }
     }
-    
+
     return { success: false, error: errorMessage }
   }
 }
@@ -175,15 +175,136 @@ export async function getAllPCNTicketsPaginatedAction(
   }
 }
 
-export async function getAllPCNTicketsAction(filters?: { status?: string; searchTerm?: string }): Promise<PCNTicket[]> {
+export async function getAllPCNTicketsAction(filters?: { status?: string; searchTerm?: string }) {
   console.log("[PCN Tickets Action] getAllPCNTicketsAction called", { filters })
 
   try {
-    const tickets = await db.getAllPCNTickets(filters)
-    console.log(`[PCN Tickets Action] Loaded ${tickets.length} tickets`)
-    return tickets
+    const tickets = await db.getPCNTicketsWithDetails(filters)
+    console.log(`[PCN Tickets Action] Loaded ${tickets.length} tickets with details`)
+    return { success: true, tickets }
   } catch (error) {
     console.error("[PCN Tickets Action] getAllPCNTicketsAction error:", error)
-    return []
+    return { success: false, tickets: [], error: error instanceof Error ? error.message : "Unknown error" }
+  }
+}
+
+export async function getActiveAgreementByVRNAction(vrn: string) {
+  console.log("[PCN Tickets Action] getActiveAgreementByVRNAction called for VRN:", vrn)
+
+  try {
+    const supabase = await createClient()
+
+    // Normalize VRN: trim whitespace and convert to uppercase
+    const normalizedVRN = vrn.trim().toUpperCase()
+
+    // Find vehicle by VRN in fleet_vehicles table (case-insensitive)
+    const { data: fleetVehicles, error: vError } = await supabase
+      .from("fleet_vehicles")
+      .select(`
+        car_id,
+        registration_number,
+        cars (id, name)
+      `)
+      .ilike("registration_number", normalizedVRN)
+
+    if (vError || !fleetVehicles || fleetVehicles.length === 0) {
+      console.log("[PCN Tickets Action] Vehicle not found for VRN:", normalizedVRN, "Error:", vError)
+      return { success: false, error: "Vehicle not found. Please check the registration number." }
+    }
+
+    const fleetVehicle: any = fleetVehicles[0]
+    const vehicle = {
+      id: fleetVehicle.car_id,
+      name: fleetVehicle.cars?.name || "Unknown Vehicle",
+      registration_number: fleetVehicle.registration_number
+    }
+
+    // Find active agreement for this vehicle
+    const { data: agreements, error: aError } = await supabase
+      .from("agreements")
+      .select(`
+        id,
+        agreement_number,
+        booking_id,
+        customer_id,
+        vehicle_id,
+        status,
+        user_profiles (full_name, email)
+      `)
+      .eq("vehicle_id", vehicle.id)
+      .in("status", ["active", "signed", "confirmed"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+
+    if (aError || !agreements || agreements.length === 0) {
+      return { success: false, error: "No active agreement found for this vehicle" }
+    }
+
+    const agreement: any = agreements[0]
+
+    return {
+      success: true,
+      data: {
+        agreementId: agreement.id,
+        agreementNumber: agreement.agreement_number,
+        bookingId: agreement.booking_id,
+        customerId: agreement.customer_id,
+        customerName: agreement.user_profiles?.full_name,
+        customerEmail: agreement.user_profiles?.email,
+        vehicleId: agreement.vehicle_id,
+        vehicleName: vehicle.name,
+        registrationNumber: vehicle.registration_number
+      }
+    }
+  } catch (error) {
+    console.error("[PCN Tickets Action] getActiveAgreementByVRNAction error:", error)
+    return { success: false, error: "An unexpected error occurred" }
+  }
+}
+
+export async function getActiveAgreementsForPCNAction() {
+  console.log("[PCN Tickets Action] getActiveAgreementsForPCNAction called")
+
+  try {
+    const supabase = await createClient()
+
+    // Get all active agreements with customer and vehicle details
+    const { data: agreements, error } = await supabase
+      .from("agreements")
+      .select(`
+        id,
+        agreement_number,
+        booking_id,
+        customer_id,
+        vehicle_id,
+        status,
+        user_profiles (full_name, email),
+        cars (id, name, registration_number)
+      `)
+      .in("status", ["active", "signed", "confirmed"])
+      .order("created_at", { ascending: false })
+      .limit(50)
+
+    if (error) {
+      console.error("[PCN Tickets Action] Error fetching agreements:", error)
+      return { success: false, error: "Failed to load agreements", agreements: [] }
+    }
+
+    const formattedAgreements = (agreements || []).map((ag: any) => ({
+      agreementId: ag.id,
+      agreementNumber: ag.agreement_number,
+      bookingId: ag.booking_id,
+      customerId: ag.customer_id,
+      customerName: ag.user_profiles?.full_name || "Unknown",
+      customerEmail: ag.user_profiles?.email,
+      vehicleId: ag.vehicle_id,
+      vehicleName: ag.cars?.name || "Unknown Vehicle",
+      registrationNumber: ag.cars?.registration_number || "No VRN"
+    }))
+
+    return { success: true, agreements: formattedAgreements }
+  } catch (error) {
+    console.error("[PCN Tickets Action] getActiveAgreementsForPCNAction error:", error)
+    return { success: false, error: "An unexpected error occurred", agreements: [] }
   }
 }

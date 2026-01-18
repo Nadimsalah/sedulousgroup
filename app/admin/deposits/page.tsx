@@ -8,42 +8,55 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
 import {
   CreditCard,
   Search,
-  Download,
   CheckCircle,
   XCircle,
   Clock,
+  X,
+  Eye,
+  ExternalLink,
   DollarSign,
   RefreshCw,
   AlertCircle,
   Plus,
   Car,
   ChevronDown,
+  ArrowRight,
+  ShieldCheck,
+  History,
 } from "lucide-react"
-import { getDeposits, refundDeposit, deductFromDeposit, createDeposit } from "@/app/actions/admin-deposits"
+import {
+  getDepositsAction,
+  refundDepositAction,
+  deductDepositAction,
+  createDepositAction
+} from "@/app/actions/deposits"
 import { getAllBookingsAction } from "@/app/actions/bookings"
 import { getAgreementsByBookingAction } from "@/app/actions/agreements"
 import { toast } from "sonner"
-import type { Deposit } from "@/app/actions/admin-deposits"
+import type { DepositWithDetails } from "@/app/actions/deposits"
 import type { BookingWithDetails } from "@/app/actions/bookings"
 
 const ITEMS_PER_PAGE = 15
 
 export default function DepositsPage() {
-  const [deposits, setDeposits] = useState<Deposit[]>([])
+  const [deposits, setDeposits] = useState<DepositWithDetails[]>([])
   const [searchQuery, setSearchQuery] = useState("")
-  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "held" | "refunded" | "deducted">("all")
+  const [statusFilter, setStatusFilter] = useState<"all" | "held" | "refunded" | "deducted" | "partially_refunded">("all")
   const [isLoading, setIsLoading] = useState(true)
   const [displayCount, setDisplayCount] = useState(ITEMS_PER_PAGE)
   const [error, setError] = useState<string | null>(null)
   const [showRefundDialog, setShowRefundDialog] = useState(false)
   const [showDeductDialog, setShowDeductDialog] = useState(false)
-  const [selectedDeposit, setSelectedDeposit] = useState<Deposit | null>(null)
+  const [selectedDeposit, setSelectedDeposit] = useState<DepositWithDetails | null>(null)
   const [refundAmount, setRefundAmount] = useState("")
   const [deductionAmount, setDeductionAmount] = useState("")
   const [deductionReason, setDeductionReason] = useState("")
+  const [deductionProof, setDeductionProof] = useState<string | null>(null)
+  const [uploadingProof, setUploadingProof] = useState(false)
   const [notes, setNotes] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
@@ -51,7 +64,7 @@ export default function DepositsPage() {
   const [selectedBooking, setSelectedBooking] = useState<BookingWithDetails | null>(null)
   const [newDeposit, setNewDeposit] = useState({
     amount: "",
-    payment_method: "card",
+    payment_method: "card" as const,
     transaction_id: "",
     notes: "",
   })
@@ -59,787 +72,628 @@ export default function DepositsPage() {
   const [stats, setStats] = useState({
     total: 0,
     totalAmount: 0,
-    pending: 0,
     held: 0,
     refunded: 0,
     deducted: 0,
   })
 
   useEffect(() => {
-    loadDeposits()
-    loadActiveBookings()
+    loadData()
   }, [])
 
-  // Reset display count when filters change
-  useEffect(() => {
-    setDisplayCount(ITEMS_PER_PAGE)
-  }, [searchQuery, statusFilter])
-
-  const handleLoadMore = useCallback(() => {
-    setDisplayCount(prev => prev + ITEMS_PER_PAGE)
-  }, [])
-
-  const loadActiveBookings = async () => {
-    try {
-      const result = await getAllBookingsAction()
-      if (result?.success && result?.data) {
-        // Filter for active bookings that don't already have deposits
-        const active = result.data.filter((b) => {
-          const status = (b.status || "").toLowerCase()
-          return ["active", "approved", "confirmed"].includes(status)
-        })
-        setActiveBookings(active)
-      }
-    } catch (error) {
-      console.error("Error loading active bookings:", error)
-    }
-  }
-
-  const loadDeposits = async () => {
+  const loadData = async () => {
     setIsLoading(true)
     setError(null)
     try {
-      console.log("[Deposits Page] Loading deposits...")
-      const result = await getDeposits()
+      const [depResult, bookResult] = await Promise.all([
+        getDepositsAction(),
+        getAllBookingsAction()
+      ])
 
-      if (result.success) {
-        console.log(`[Deposits Page] Loaded ${result.data.length} deposits`)
-        setDeposits(result.data || [])
-        calculateStats(result.data || [])
+      if (depResult.success) {
+        setDeposits(depResult.data || [])
+        calculateStats(depResult.data || [])
       } else {
-        console.error("[Deposits Page] Error loading deposits:", result.error)
-        setError(result.error || "Failed to load deposits")
-        setDeposits([])
+        setError(depResult.error || "Failed to load deposits")
+      }
+
+      if (bookResult.success) {
+        // Filter for active/confirmed bookings
+        const active = bookResult.data.filter((b) =>
+          ["active", "approved", "confirmed", "on rent"].includes((b.status || "").toLowerCase())
+        )
+        setActiveBookings(active)
       }
     } catch (err) {
-      console.error("[Deposits Page] Unexpected error:", err)
-      setError("Failed to load deposits")
-      setDeposits([])
+      console.error("[Deposits Page] Error loading data:", err)
+      setError("An unexpected error occurred")
     } finally {
       setIsLoading(false)
     }
   }
 
-  const calculateStats = (data: Deposit[]) => {
+  const calculateStats = (data: DepositWithDetails[]) => {
     setStats({
       total: data.length,
       totalAmount: data.reduce((sum, d) => sum + (d.amount || 0), 0),
-      pending: data.filter((d) => d.status === "pending").length,
       held: data.filter((d) => d.status === "held").length,
-      refunded: data.filter((d) => d.status === "refunded").length,
+      refunded: data.filter((d) => d.status === "refunded" || d.status === "partially_refunded").length,
       deducted: data.filter((d) => d.status === "deducted").length,
     })
   }
 
   const filteredDeposits = deposits.filter((deposit) => {
+    const query = searchQuery.toLowerCase()
     const matchesSearch =
-      deposit.customer_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      deposit.booking_id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      deposit.transaction_id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      deposit.vehicle_name?.toLowerCase().includes(searchQuery.toLowerCase())
+      deposit.customer_name?.toLowerCase().includes(query) ||
+      deposit.bookingId?.toLowerCase().includes(query) ||
+      deposit.transactionId?.toLowerCase().includes(query) ||
+      deposit.vehicle_name?.toLowerCase().includes(query) ||
+      deposit.vehicle_registration?.toLowerCase().includes(query)
 
     const matchesStatus = statusFilter === "all" || deposit.status === statusFilter
 
     return matchesSearch && matchesStatus
   })
 
-  // Lazy loading
   const displayedDeposits = filteredDeposits.slice(0, displayCount)
   const hasMore = displayedDeposits.length < filteredDeposits.length
 
-  const getStatusColor = (status: string) => {
+  const getStatusConfig = (status: string) => {
     switch (status) {
-      case "pending":
-        return "bg-yellow-500/10 text-yellow-500 border border-yellow-500/30"
       case "held":
-        return "bg-blue-500/10 text-blue-500 border border-blue-500/30"
+        return {
+          color: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+          icon: <ShieldCheck className="h-3 w-3" />,
+          label: "Held Safely"
+        }
       case "refunded":
-        return "bg-green-500/10 text-green-500 border border-green-500/30"
+        return {
+          color: "bg-green-500/10 text-green-400 border-green-500/20",
+          icon: <CheckCircle className="h-3 w-3" />,
+          label: "Fully Refunded"
+        }
+      case "partially_refunded":
+        return {
+          color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+          icon: <RefreshCw className="h-3 w-3" />,
+          label: "Partially Refunded"
+        }
       case "deducted":
-        return "bg-red-500/10 text-red-500 border border-red-500/30"
+        return {
+          color: "bg-red-500/10 text-red-400 border-red-500/20",
+          icon: <XCircle className="h-3 w-3" />,
+          label: "Deducted"
+        }
       default:
-        return "bg-gray-500/10 text-gray-500 border border-gray-500/30"
+        return {
+          color: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
+          icon: <AlertCircle className="h-3 w-3" />,
+          label: status
+        }
     }
   }
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "pending":
-        return <Clock className="h-4 w-4" />
-      case "held":
-        return <DollarSign className="h-4 w-4" />
-      case "refunded":
-        return <CheckCircle className="h-4 w-4" />
-      case "deducted":
-        return <XCircle className="h-4 w-4" />
-      default:
-        return <AlertCircle className="h-4 w-4" />
-    }
-  }
-
-  const handleRefund = (deposit: Deposit) => {
-    setSelectedDeposit(deposit)
-    setRefundAmount(deposit.amount.toString())
-    setNotes("")
-    setShowRefundDialog(true)
-  }
-
-  const handleDeduct = (deposit: Deposit) => {
-    setSelectedDeposit(deposit)
-    setDeductionAmount("")
-    setDeductionReason("")
-    setNotes("")
-    setShowDeductDialog(true)
-  }
-
-  const processRefund = async () => {
+  const handleRefund = async () => {
     if (!selectedDeposit) return
-
-    const refundAmt = Number.parseFloat(refundAmount)
-    if (isNaN(refundAmt) || refundAmt <= 0) {
-      toast.error("Please enter a valid refund amount")
+    const amount = parseFloat(refundAmount)
+    if (isNaN(amount) || amount <= 0) {
+      toast.error("Please enter a valid amount")
       return
     }
 
     setIsProcessing(true)
-    try {
-      console.log("[Deposits Page] Processing refund:", selectedDeposit.id, refundAmt)
-      const result = await refundDeposit(selectedDeposit.id, refundAmt, notes || undefined)
-
-      if (result.success) {
-        toast.success("Refund processed successfully!")
+    const result = await refundDepositAction(selectedDeposit.id, amount, notes)
+    if (result.success) {
+      toast.success("Refund processed successfully")
       setShowRefundDialog(false)
-        setRefundAmount("")
-        setNotes("")
-        await loadDeposits()
-      } else {
-        console.error("[Deposits Page] Failed to process refund:", result.error)
-        toast.error(`Failed to process refund: ${result.error}`)
-      }
-    } catch (err) {
-      console.error("[Deposits Page] Error processing refund:", err)
-      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred"
-      toast.error(`Error: ${errorMessage}`)
-    } finally {
-      setIsProcessing(false)
+      loadData()
+    } else {
+      toast.error(result.error || "Failed to process refund")
     }
+    setIsProcessing(false)
   }
 
-  const processDeduction = async () => {
+  const handleDeduct = async () => {
     if (!selectedDeposit) return
-
-    if (!deductionReason || deductionReason.trim() === "") {
-      toast.error("Please enter a reason for the deduction")
+    const amount = parseFloat(deductionAmount)
+    if (isNaN(amount) || amount <= 0) {
+      toast.error("Please enter a valid amount")
       return
     }
-
-    const deductAmt = Number.parseFloat(deductionAmount)
-    if (isNaN(deductAmt) || deductAmt <= 0) {
-      toast.error("Please enter a valid deduction amount")
-      return
-    }
-
-    if (deductAmt > selectedDeposit.amount) {
-      toast.error("Deduction amount cannot exceed deposit amount")
+    if (!deductionReason) {
+      toast.error("Reason is required")
       return
     }
 
     setIsProcessing(true)
-    try {
-      console.log("[Deposits Page] Processing deduction:", selectedDeposit.id, deductAmt, deductionReason)
-      const result = await deductFromDeposit(selectedDeposit.id, deductAmt, deductionReason, notes || undefined)
-
-      if (result.success) {
-        toast.success("Deduction processed successfully!")
+    const result = await deductDepositAction(selectedDeposit.id, amount, deductionReason, notes, deductionProof || undefined)
+    if (result.success) {
+      toast.success("Deduction recorded successfully")
       setShowDeductDialog(false)
-        setDeductionAmount("")
-        setDeductionReason("")
-        setNotes("")
-        await loadDeposits()
+      setDeductionProof(null)
+      loadData()
+    } else {
+      toast.error(result.error || "Failed to process deduction")
+    }
+    setIsProcessing(false)
+  }
+
+  const handleProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploadingProof(true)
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      const response = await fetch("/api/upload", { method: "POST", body: formData })
+      if (response.ok) {
+        const { url } = await response.json()
+        setDeductionProof(url)
+        toast.success("Proof document uploaded")
       } else {
-        console.error("[Deposits Page] Failed to process deduction:", result.error)
-        toast.error(`Failed to process deduction: ${result.error}`)
+        toast.error("Failed to upload proof")
       }
-    } catch (err) {
-      console.error("[Deposits Page] Error processing deduction:", err)
-      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred"
-      toast.error(`Error: ${errorMessage}`)
+    } catch (error) {
+      console.error("Proof upload error:", error)
+      toast.error("Error uploading document")
     } finally {
-      setIsProcessing(false)
+      setUploadingProof(false)
     }
   }
 
   const handleCreateDeposit = async () => {
-    if (!selectedBooking || !newDeposit.amount) return
-
-    const amount = Number.parseFloat(newDeposit.amount)
+    if (!selectedBooking) return
+    const amount = parseFloat(newDeposit.amount)
     if (isNaN(amount) || amount <= 0) {
-      toast.error("Please enter a valid deposit amount")
+      toast.error("Valid amount required")
       return
     }
 
     setIsCreating(true)
     try {
-      console.log("[Deposits Page] Creating deposit:", selectedBooking.id, amount)
-      
-      // Get agreement for this booking - it's required for deposits
-      let agreementId: string | null = null
-      try {
-        const agreements = await getAgreementsByBookingAction(selectedBooking.id)
-        if (agreements && agreements.length > 0) {
-          agreementId = agreements[0].id
-          console.log("[Deposits Page] Found agreement:", agreementId)
-        } else {
-          console.log("[Deposits Page] No agreement found for booking")
-          toast.error("This booking does not have an agreement. Please create an agreement first.")
-          setIsCreating(false)
-          return
-        }
-      } catch (err) {
-        console.error("[Deposits Page] Error fetching agreement:", err)
-        toast.error("Failed to fetch agreement for this booking")
-        setIsCreating(false)
+      const agreements = await getAgreementsByBookingAction(selectedBooking.id)
+      if (!agreements || agreements.length === 0) {
+        toast.error("No agreement found for this booking. Create one first.")
         return
       }
 
-      // Get customer_id from booking - it's required
-      const customerId = selectedBooking.user_id
-      if (!customerId) {
-        toast.error("This booking does not have a customer ID. Cannot create deposit.")
-        setIsCreating(false)
-        return
-      }
-
-      console.log("[Deposits Page] Creating deposit with:", {
-        booking_id: selectedBooking.id,
-        agreement_id: agreementId,
-        customer_id: customerId,
-        amount: amount,
-      })
-
-      const result = await createDeposit({
-        booking_id: selectedBooking.id,
-        agreement_id: agreementId!,
-        customer_id: customerId,
-        amount: amount,
-        status: "held",
-        payment_method: newDeposit.payment_method,
-        transaction_id: newDeposit.transaction_id || null,
-        notes: newDeposit.notes || null,
+      const result = await createDepositAction({
+        bookingId: selectedBooking.id,
+        agreementId: agreements[0].id,
+        customerId: selectedBooking.user_id || "",
+        amount,
+        paymentMethod: newDeposit.payment_method,
+        transactionId: newDeposit.transaction_id,
+        notes: newDeposit.notes
       })
 
       if (result.success) {
-        toast.success("Deposit created successfully!")
+        toast.success("Deposit created")
         setShowCreateDialog(false)
-        setSelectedBooking(null)
-        setNewDeposit({
-          amount: "",
-          payment_method: "card",
-          transaction_id: "",
-          notes: "",
-        })
-        await loadDeposits()
-        await loadActiveBookings()
+        loadData()
       } else {
-        console.error("[Deposits Page] Failed to create deposit:", result.error)
-        toast.error(`Failed to create deposit: ${result.error}`)
+        toast.error(result.error || "Failed to create")
       }
-    } catch (err) {
-      console.error("[Deposits Page] Error creating deposit:", err)
-      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred"
-      toast.error(`Error: ${errorMessage}`)
     } finally {
       setIsCreating(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-black p-4 md:p-6 lg:p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-white">Deposits Management</h1>
-            <p className="text-gray-400 mt-1">Track and manage customer deposits and refunds</p>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              onClick={() => {
-                setShowCreateDialog(true)
-                loadActiveBookings()
-              }}
-              className="bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Deposit
-            </Button>
-          <Button className="bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white">
-            <Download className="h-4 w-4 mr-2" />
-            Export Report
+    <div className="min-h-screen bg-black text-white p-4 md:p-8 space-y-8">
+      {/* Header section with liquid glass style */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="space-y-1">
+          <h1 className="text-3xl md:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-500">
+            Deposits Fleet
+          </h1>
+          <p className="text-zinc-400">Total liability management and refund processing</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={() => setShowCreateDialog(true)}
+            className="bg-white text-black hover:bg-zinc-200 font-semibold px-6"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Register Deposit
           </Button>
-          </div>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card className="bg-zinc-900 border-zinc-800">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-400">Total Deposits</CardTitle>
-              <CreditCard className="h-4 w-4 text-blue-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-white">
-                {isLoading ? <span className="animate-pulse">...</span> : stats.total}
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                {isLoading ? "..." : `£${stats.totalAmount.toLocaleString()} total value`}
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="bg-zinc-900 border-zinc-800">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-400">Held</CardTitle>
-              <DollarSign className="h-4 w-4 text-yellow-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-white">
-                {isLoading ? <span className="animate-pulse">...</span> : stats.held}
-              </div>
-              <p className="text-xs text-gray-500 mt-1">Currently held deposits</p>
-            </CardContent>
-          </Card>
-          <Card className="bg-zinc-900 border-zinc-800">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-400">Refunded</CardTitle>
-              <CheckCircle className="h-4 w-4 text-green-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-white">
-                {isLoading ? <span className="animate-pulse">...</span> : stats.refunded}
-              </div>
-              <p className="text-xs text-gray-500 mt-1">Successfully refunded</p>
-            </CardContent>
-          </Card>
-          <Card className="bg-zinc-900 border-zinc-800">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-400">Deducted</CardTitle>
-              <XCircle className="h-4 w-4 text-red-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-white">
-                {isLoading ? <span className="animate-pulse">...</span> : stats.deducted}
-              </div>
-              <p className="text-xs text-gray-500 mt-1">With deductions</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Filters */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Search by customer, booking ID, or transaction ID..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 bg-black border-zinc-700 text-white placeholder-gray-500"
-              />
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              {(["all", "pending", "held", "refunded", "deducted"] as const).map((status) => (
-                <Button
-                  key={status}
-                  variant={statusFilter === status ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setStatusFilter(status)}
-                  className={statusFilter === status ? "bg-red-500 hover:bg-red-600" : "border-zinc-700 text-gray-300"}
-                >
-                  {status.charAt(0).toUpperCase() + status.slice(1)}
-                </Button>
-              ))}
-            </div>
-            <Button
-              onClick={loadDeposits}
-              size="sm"
-              variant="outline"
-              className="border-zinc-700 bg-transparent"
-              disabled={isLoading}
-            >
-              <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
-              Refresh
-            </Button>
-          </div>
-        </div>
-
-        {/* Error Message */}
-        {error && <div className="bg-red-500/10 border border-red-500 rounded-lg p-4 text-red-400">{error}</div>}
-
-        {/* Deposits List */}
-        <div className="space-y-4">
-          {isLoading ? (
-            <div className="space-y-4">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 animate-pulse">
-                  <div className="flex flex-col lg:flex-row gap-4">
-                    <div className="flex-1 space-y-3">
-                      <div className="h-6 bg-zinc-800 rounded w-1/3" />
-                      <div className="h-4 bg-zinc-800/50 rounded w-1/2" />
-                      <div className="h-4 bg-zinc-800/50 rounded w-2/3" />
-                    </div>
-                    <div className="w-24 h-10 bg-zinc-800 rounded" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : filteredDeposits.length === 0 ? (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center">
-              <CreditCard className="h-16 w-16 text-gray-600 mx-auto mb-4" />
-              <p className="text-gray-400">No deposits found</p>
-            </div>
-          ) : (
-            displayedDeposits.map((deposit) => (
-              <div
-                key={deposit.id}
-                className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 hover:border-zinc-700 transition"
-              >
-                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex flex-wrap items-center gap-2 mb-2">
-                      <h3 className="text-lg font-semibold text-white">{deposit.customer_name}</h3>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-xs flex items-center gap-1 ${getStatusColor(deposit.status)}`}
-                      >
-                        {getStatusIcon(deposit.status)}
-                        {deposit.status}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-sm text-gray-400">
-                      <p>Booking: {deposit.booking_id?.slice(0, 8)}</p>
-                      <p>Vehicle: {deposit.vehicle_name}</p>
-                      <p>Transaction: {deposit.transaction_id}</p>
-                      <p>Date: {new Date(deposit.created_at).toLocaleDateString()}</p>
-                    </div>
-                    {(deposit.refund_amount !== null || deposit.deduction_amount !== null) && (
-                      <div className="flex gap-4 mt-3 p-3 bg-zinc-800/50 rounded-lg">
-                        {deposit.refund_amount !== null && (
-                          <div>
-                            <p className="text-xs text-gray-400">Refund Amount</p>
-                            <p className="text-green-400 font-bold">£{deposit.refund_amount}</p>
-                          </div>
-                        )}
-                        {deposit.deduction_amount !== null && deposit.deduction_amount > 0 && (
-                          <div>
-                            <p className="text-xs text-gray-400">Deduction</p>
-                            <p className="text-red-400 font-bold">-£{deposit.deduction_amount}</p>
-                            {deposit.deduction_reason && (
-                              <p className="text-xs text-gray-500">{deposit.deduction_reason}</p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-bold text-white">£{deposit.amount}</p>
-                    <p className="text-xs text-gray-400">{deposit.payment_method}</p>
-                    {deposit.status === "held" && (
-                      <div className="flex gap-2 mt-3">
-                        <Button
-                          onClick={() => handleRefund(deposit)}
-                          size="sm"
-                          className="bg-green-500/10 text-green-400 border border-green-500/30 hover:bg-green-500/20"
-                        >
-                          <RefreshCw className="h-4 w-4 mr-1" />
-                          Refund
-                        </Button>
-                        <Button
-                          onClick={() => handleDeduct(deposit)}
-                          size="sm"
-                          className="bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20"
-                        >
-                          <XCircle className="h-4 w-4 mr-1" />
-                          Deduct
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-
-          {/* Load More Button */}
-          {!isLoading && hasMore && (
-            <div className="pt-4">
-              <Button
-                onClick={handleLoadMore}
-                className="w-full bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700"
-              >
-                <ChevronDown className="h-4 w-4 mr-2" />
-                Load More ({filteredDeposits.length - displayedDeposits.length} remaining)
-              </Button>
-            </div>
-          )}
         </div>
       </div>
 
-      {/* Refund Dialog */}
-      <Dialog open={showRefundDialog} onOpenChange={setShowRefundDialog}>
-        <DialogContent className="bg-zinc-900 border-zinc-800 text-white">
-          <DialogHeader>
-            <DialogTitle>Process Refund</DialogTitle>
-            <DialogDescription className="text-gray-400">
-              Refund the deposit to {selectedDeposit?.customer_name}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 mt-4">
-            <div>
-              <Label className="text-gray-400">Refund Amount (£)</Label>
-              <Input
-                type="number"
-                value={refundAmount}
-                onChange={(e) => setRefundAmount(e.target.value)}
-                className="bg-black border-zinc-700 text-white mt-1"
-                placeholder="Enter refund amount"
-              />
-              <p className="text-xs text-gray-500 mt-1">Original deposit: £{selectedDeposit?.amount}</p>
-            </div>
-            <div>
-              <Label className="text-gray-400">Notes</Label>
-              <Textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="bg-black border-zinc-700 text-white mt-1"
-                placeholder="Add any notes about this refund..."
-                rows={3}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={processRefund}
-                disabled={isProcessing}
-                className="flex-1 bg-green-500 hover:bg-green-600"
-              >
-                {isProcessing ? "Processing..." : "Process Refund"}
-              </Button>
-              <Button variant="outline" onClick={() => setShowRefundDialog(false)} className="border-zinc-700">
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Stats Board */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "Active Deposits", value: stats.held, icon: ShieldCheck, color: "text-blue-400" },
+          { label: "Total Volume", value: `£${stats.totalAmount.toLocaleString()}`, icon: DollarSign, color: "text-emerald-400" },
+          { label: "Refunded/Settled", value: stats.refunded, icon: CheckCircle, color: "text-zinc-400" },
+          { label: "Alerts / Deductions", value: stats.deducted, icon: AlertCircle, color: "text-red-400" },
+        ].map((stat, i) => (
+          <Card key={i} className="bg-zinc-900/40 backdrop-blur-xl border-white/5 hover:border-white/10 transition-colors">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div className="p-2 rounded-lg bg-white/5">
+                  <stat.icon className={`h-5 w-5 ${stat.color}`} />
+                </div>
+                <Badge variant="outline" className="border-white/5 bg-white/5 text-[10px]">REAL-TIME</Badge>
+              </div>
+              <div className="mt-4">
+                <p className="text-2xl font-bold font-mono">{isLoading ? "---" : stat.value}</p>
+                <p className="text-xs text-zinc-500 uppercase tracking-wider mt-1">{stat.label}</p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
-      {/* Deduction Dialog */}
-      <Dialog open={showDeductDialog} onOpenChange={setShowDeductDialog}>
-        <DialogContent className="bg-zinc-900 border-zinc-800 text-white">
-          <DialogHeader>
-            <DialogTitle>Process Deduction</DialogTitle>
-            <DialogDescription className="text-gray-400">
-              Deduct amount from {selectedDeposit?.customer_name}'s deposit
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 mt-4">
-            <div>
-              <Label className="text-gray-400">Deduction Amount (£)</Label>
-              <Input
-                type="number"
-                value={deductionAmount}
-                onChange={(e) => setDeductionAmount(e.target.value)}
-                className="bg-black border-zinc-700 text-white mt-1"
-                placeholder="Enter deduction amount"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Original deposit: £{selectedDeposit?.amount} | Refund will be: £
-                {selectedDeposit ? (selectedDeposit.amount - (Number.parseFloat(deductionAmount) || 0)).toFixed(2) : 0}
-              </p>
-            </div>
-            <div>
-              <Label className="text-gray-400">Reason for Deduction</Label>
-              <Input
-                value={deductionReason}
-                onChange={(e) => setDeductionReason(e.target.value)}
-                className="bg-black border-zinc-700 text-white mt-1"
-                placeholder="e.g., Vehicle damage, cleaning fee"
-              />
-            </div>
-            <div>
-              <Label className="text-gray-400">Notes</Label>
-              <Textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="bg-black border-zinc-700 text-white mt-1"
-                placeholder="Additional details..."
-                rows={3}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={processDeduction}
-                disabled={isProcessing || !deductionReason}
-                className="flex-1 bg-red-500 hover:bg-red-600"
-              >
-                {isProcessing ? "Processing..." : "Process Deduction"}
-              </Button>
-              <Button variant="outline" onClick={() => setShowDeductDialog(false)} className="border-zinc-700">
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Search and Filters */}
+      <div className="flex flex-col lg:flex-row gap-4 items-center">
+        <div className="relative flex-1 group w-full">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-600 group-focus-within:text-white transition-colors" />
+          <Input
+            placeholder="Search by customer, VRN, or booking reference..."
+            className="pl-10 bg-zinc-900/50 border-white/5 focus:border-white/20 transition-all w-full"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 lg:pb-0 w-full lg:w-auto">
+          {(["all", "held", "refunded", "deducted"] as const).map((filter) => (
+            <button
+              key={filter}
+              onClick={() => setStatusFilter(filter)}
+              className={`px-4 py-2 rounded-full text-xs font-medium border transition-all whitespace-nowrap ${statusFilter === filter
+                ? "bg-white text-black border-white"
+                : "bg-zinc-900 text-zinc-400 border-white/5 hover:border-white/10"
+                }`}
+            >
+              {filter.charAt(0).toUpperCase() + filter.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
 
-      {/* Create Deposit Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="bg-zinc-900 border-zinc-800 text-white max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Add Deposit for Active Booking</DialogTitle>
-            <DialogDescription className="text-gray-400">
-              Select an active booking and enter deposit details
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 mt-4">
-            {/* Select Booking */}
-            <div>
-              <Label className="text-gray-400 mb-2 block">Select Active Booking</Label>
-              <div className="max-h-60 overflow-y-auto space-y-2 border border-zinc-700 rounded-lg p-2">
-                {activeBookings.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">No active bookings found</p>
-                ) : (
-                  activeBookings.map((booking) => {
-                    const hasDeposit = deposits.some((d) => d.booking_id === booking.id)
-                    return (
-                      <div
-                        key={booking.id}
-                        onClick={() => {
-                          if (!hasDeposit) {
-                            setSelectedBooking(booking)
-                            setNewDeposit({
-                              amount: "",
-                              payment_method: "card",
-                              transaction_id: "",
-                              notes: "",
-                            })
-                          }
-                        }}
-                        className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                          selectedBooking?.id === booking.id
-                            ? "border-red-500 bg-red-500/10"
-                            : hasDeposit
-                              ? "border-zinc-700 bg-zinc-800/50 opacity-50 cursor-not-allowed"
-                              : "border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800/50"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <Car className="h-4 w-4 text-gray-400" />
-                              <h4 className="font-semibold text-white">{booking.car_name || "Unknown Vehicle"}</h4>
-                              {hasDeposit && (
-                                <span className="text-xs bg-green-500/10 text-green-400 px-2 py-0.5 rounded">
-                                  Has Deposit
+      {/* Main Table / Grid */}
+      <div className="space-y-4">
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-20 space-y-4">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-white" />
+            <p className="text-zinc-500 text-sm">Synchronizing ledger...</p>
+          </div>
+        ) : displayedDeposits.length === 0 ? (
+          <div className="bg-zinc-900/20 border border-dashed border-white/10 rounded-2xl py-20 text-center">
+            <History className="h-12 w-12 text-zinc-700 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-zinc-400">No transactions found</h3>
+            <p className="text-zinc-600 text-sm mt-1">Adjust your filters or register a new deposit.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4">
+            {displayedDeposits.map((deposit) => {
+              const config = getStatusConfig(deposit.status)
+              return (
+                <Card key={deposit.id} className="bg-zinc-900/30 border-white/5 hover:border-white/10 transition-all group overflow-hidden">
+                  <CardContent className="p-0">
+                    <div className="p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                      <div className="flex items-start gap-4">
+                        <div className="h-12 w-12 rounded-xl bg-white/5 flex items-center justify-center flex-shrink-0">
+                          <CreditCard className="h-6 w-6 text-zinc-400" />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-3">
+                            <h3 className="font-bold text-lg">{deposit.customer_name}</h3>
+                            <Badge className={`${config.color} uppercase text-[10px] tracking-widest px-2`}>
+                              {config.icon}
+                              <span className="ml-1">{config.label}</span>
+                            </Badge>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-500">
+                            <span className="flex items-center gap-1.5"><Car className="h-3.5 w-3.5" /> {deposit.vehicle_name}</span>
+                            <span className="px-1.5 py-0.5 bg-zinc-800 rounded font-mono text-[10px] text-zinc-300 uppercase">{deposit.vehicle_registration}</span>
+                            <span>Booking ID: <span className="text-zinc-400">{deposit.bookingId?.slice(0, 8)}</span></span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-center gap-6">
+                        <div className="text-center sm:text-right">
+                          <p className="text-2xl font-bold">£{deposit.amount.toLocaleString()}</p>
+                          <p className="text-[10px] text-zinc-500 uppercase tracking-tighter">{deposit.paymentMethod}</p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {deposit.status === "held" ? (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-white/5 hover:bg-emerald-500/10 hover:text-emerald-400 transition-colors"
+                                onClick={() => {
+                                  setSelectedDeposit(deposit)
+                                  setRefundAmount(deposit.amount.toString())
+                                  setShowRefundDialog(true)
+                                }}
+                              >
+                                Refund
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-white/5 hover:bg-red-500/10 hover:text-red-400 transition-colors"
+                                onClick={() => {
+                                  setSelectedDeposit(deposit)
+                                  setShowDeductDialog(true)
+                                }}
+                              >
+                                Deduct
+                              </Button>
+                            </>
+                          ) : (
+                            <div className="flex flex-col text-right">
+                              {deposit.refundAmount && (
+                                <span className="text-xs text-emerald-500 flex items-center justify-end gap-1">
+                                  <CheckCircle className="h-3 w-3" /> Refunded £{deposit.refundAmount}
                                 </span>
                               )}
+                              {deposit.deductionAmount && (
+                                <div className="flex flex-col items-end gap-1">
+                                  <span className="text-xs text-red-400 flex items-center justify-end gap-1">
+                                    <AlertCircle className="h-3 w-3" /> Deducted £{deposit.deductionAmount}
+                                  </span>
+                                  {deposit.deductionProofUrl && (
+                                    <a
+                                      href={deposit.deductionProofUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-[10px] text-blue-400 hover:underline flex items-center gap-1"
+                                    >
+                                      <Eye className="h-2.5 w-2.5" /> View Proof
+                                    </a>
+                                  )}
+                                </div>
+                              )}
                             </div>
-                            <p className="text-sm text-gray-400">Customer: {booking.customer_name}</p>
-                            <p className="text-sm text-gray-400">Email: {booking.customer_email}</p>
-                            <p className="text-sm text-gray-400">
-                              Booking ID: {booking.id.slice(0, 8)}...
-                            </p>
-                          </div>
-                          {selectedBooking?.id === booking.id && (
-                            <CheckCircle className="h-5 w-5 text-red-500" />
                           )}
                         </div>
                       </div>
-                    )
-                  })
+                    </div>
+
+                    {/* Bottom timeline / detail footer if settled */}
+                    {(deposit.status !== "held" || deposit.notes) && (
+                      <div className="px-6 py-3 bg-white/[0.02] border-t border-white/5 flex items-center justify-between text-xs text-zinc-500">
+                        <div className="flex items-center gap-4">
+                          <span>Registered: {new Date(deposit.createdAt).toLocaleDateString()}</span>
+                          {deposit.refundedAt && <span>Action Date: {new Date(deposit.refundedAt).toLocaleDateString()}</span>}
+                        </div>
+                        {deposit.notes && <span className="italic truncate max-w-[300px]">"{deposit.notes}"</span>}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        )}
+
+        {!isLoading && hasMore && (
+          <Button
+            variant="ghost"
+            className="w-full text-zinc-500 hover:text-white mt-4 border border-white/5"
+            onClick={() => setDisplayCount(prev => prev + ITEMS_PER_PAGE)}
+          >
+            View More Transactions <ChevronDown className="ml-2 h-4 w-4" />
+          </Button>
+        )}
+      </div>
+
+      {/* Dialogs */}
+      {/* Create Dialog */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="bg-zinc-950 border-white/10 text-white max-w-2xl overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold">Register Fleet Deposit</DialogTitle>
+            <DialogDescription>Attach a security deposit to an active booking.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 mt-4">
+            <div className="space-y-2">
+              <Label className="text-xs uppercase tracking-widest text-zinc-500">Select Active Booking</Label>
+              <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                {activeBookings.length === 0 ? (
+                  <div className="py-10 text-center border border-dashed border-white/5 rounded-xl text-zinc-600">No eligible bookings available</div>
+                ) : (
+                  activeBookings.map(b => (
+                    <div
+                      key={b.id}
+                      onClick={() => setSelectedBooking(b)}
+                      className={`p-4 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${selectedBooking?.id === b.id
+                        ? "bg-white/10 border-white/20"
+                        : "bg-white/5 border-white/5 hover:bg-white/[0.07]"
+                        }`}
+                    >
+                      <div className="space-y-1">
+                        <p className="font-bold text-sm">{b.customer_name}</p>
+                        <p className="text-[10px] text-zinc-500 uppercase">{b.car_name} • {b.car_registration_number || 'NO VRN'}</p>
+                      </div>
+                      <div className="text-right">
+                        <Badge variant="outline" className="text-[10px]">{b.status}</Badge>
+                      </div>
+                    </div>
+                  ))
                 )}
               </div>
             </div>
 
             {selectedBooking && (
-              <>
+              <div className="p-4 bg-white/5 rounded-2xl border border-white/5 animate-in fade-in slide-in-from-top-2">
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-gray-400">Deposit Amount (£)</Label>
+                  <div className="space-y-2">
+                    <Label>Amount (£)</Label>
                     <Input
                       type="number"
+                      placeholder="500.00"
                       value={newDeposit.amount}
-                      onChange={(e) => setNewDeposit({ ...newDeposit, amount: e.target.value })}
-                      className="bg-black border-zinc-700 text-white mt-1"
-                      placeholder="Enter amount"
-                      step="0.01"
+                      onChange={e => setNewDeposit({ ...newDeposit, amount: e.target.value })}
+                      className="bg-black border-white/10"
                     />
                   </div>
-                  <div>
-                    <Label className="text-gray-400">Payment Method</Label>
-                    <Select
-                      value={newDeposit.payment_method}
-                      onValueChange={(value) => setNewDeposit({ ...newDeposit, payment_method: value })}
-                    >
-                      <SelectTrigger className="bg-black border-zinc-700 text-white mt-1">
+                  <div className="space-y-2">
+                    <Label>Method</Label>
+                    <Select value={newDeposit.payment_method} onValueChange={v => setNewDeposit({ ...newDeposit, payment_method: v as any })}>
+                      <SelectTrigger className="bg-black border-white/10">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-zinc-900 border-zinc-700">
-                        <SelectItem value="card">Card</SelectItem>
-                        <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                        <SelectItem value="cash">Cash</SelectItem>
-                        <SelectItem value="other">Other</SelectItem>
+                      <SelectContent className="bg-zinc-900 border-white/10 text-white">
+                        <SelectItem value="card">Bank Card</SelectItem>
+                        <SelectItem value="bank_transfer">Wire Transfer</SelectItem>
+                        <SelectItem value="cash">Physical Cash</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
-
-                <div>
-                  <Label className="text-gray-400">Transaction ID</Label>
+                <div className="mt-4 space-y-2">
+                  <Label>Reference / Transaction ID</Label>
                   <Input
+                    placeholder="STRIPE_REF_123"
                     value={newDeposit.transaction_id}
-                    onChange={(e) => setNewDeposit({ ...newDeposit, transaction_id: e.target.value })}
-                    className="bg-black border-zinc-700 text-white mt-1"
-                    placeholder="Enter transaction ID (optional)"
+                    onChange={e => setNewDeposit({ ...newDeposit, transaction_id: e.target.value })}
+                    className="bg-black border-white/10"
                   />
                 </div>
-
-                <div>
-                  <Label className="text-gray-400">Notes</Label>
-                  <Textarea
-                    value={newDeposit.notes}
-                    onChange={(e) => setNewDeposit({ ...newDeposit, notes: e.target.value })}
-                    className="bg-black border-zinc-700 text-white mt-1"
-                    placeholder="Additional notes (optional)"
-                    rows={3}
-                  />
-                </div>
-
-                <div className="flex gap-2">
-                  <Button
-                    onClick={handleCreateDeposit}
-                    disabled={isCreating || !newDeposit.amount || Number.parseFloat(newDeposit.amount) <= 0}
-                    className="flex-1 bg-green-500 hover:bg-green-600"
-                  >
-                    {isCreating ? "Creating..." : "Create Deposit"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setShowCreateDialog(false)
-                      setSelectedBooking(null)
-                      setNewDeposit({
-                        amount: "",
-                        payment_method: "card",
-                        transaction_id: "",
-                        notes: "",
-                      })
-                    }}
-                    className="border-zinc-700"
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </>
+              </div>
             )}
+
+            <Button
+              className="w-full h-12 bg-white text-black hover:bg-zinc-200 font-bold"
+              disabled={!selectedBooking || isCreating}
+              onClick={handleCreateDeposit}
+            >
+              {isCreating ? "Processing..." : "Confirm & Commit to Ledger"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Refund Dialog */}
+      <Dialog open={showRefundDialog} onOpenChange={setShowRefundDialog}>
+        <DialogContent className="bg-zinc-950 border-white/10 text-white">
+          <DialogHeader>
+            <DialogTitle>Initiate Refund</DialogTitle>
+            <DialogDescription>Returning collateral to {selectedDeposit?.customer_name}.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label>Refund Amount (£)</Label>
+              <Input
+                type="number"
+                value={refundAmount}
+                onChange={e => setRefundAmount(e.target.value)}
+                className="bg-black border-white/10 text-xl font-bold h-12"
+              />
+              <p className="text-[10px] text-zinc-500 text-right uppercase">Available Balance: £{selectedDeposit?.amount}</p>
+            </div>
+            <div className="space-y-2">
+              <Label>internal Note</Label>
+              <Textarea
+                placeholder="Reason for refund (optional)..."
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                className="bg-black border-white/10"
+                rows={3}
+              />
+            </div>
+            <Button
+              variant="outline"
+              className="w-full h-12 bg-emerald-500 text-white hover:bg-emerald-600 border-none font-bold"
+              disabled={isProcessing}
+              onClick={handleRefund}
+            >
+              {isProcessing ? "Transacting..." : "Execute Settlement"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Deduct Dialog */}
+      <Dialog open={showDeductDialog} onOpenChange={setShowDeductDialog}>
+        <DialogContent className="bg-zinc-950 border-white/10 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-red-500">Process Deduction</DialogTitle>
+            <DialogDescription>Charge the collateral for damage or administrative fees.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-6">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Deduction (£)</Label>
+                <Input
+                  type="number"
+                  value={deductionAmount}
+                  onChange={e => setDeductionAmount(e.target.value)}
+                  className="bg-black border-red-500/20 focus:border-red-500 text-red-500 font-bold"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Primary Reason</Label>
+                <Select value={deductionReason} onValueChange={setDeductionReason}>
+                  <SelectTrigger className="bg-black border-white/10 text-xs">
+                    <SelectValue placeholder="Select reason" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-900 border-white/10 text-white">
+                    <SelectItem value="Vehicle Damage">Vehicle Damage</SelectItem>
+                    <SelectItem value="Traffic Fine / PCN">Traffic Fine / PCN</SelectItem>
+                    <SelectItem value="Cleaning Fee">Cleaning Fee</SelectItem>
+                    <SelectItem value="Administrative Penalty">Admin Penalty</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Details for Customer</Label>
+              <Textarea
+                placeholder="Detailed explanation of the charge..."
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                className="bg-black border-white/10"
+                rows={3}
+              />
+            </div>
+            <div className="space-y-2 text-sm">
+              <Label className="text-zinc-400">Documentation / Proof</Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  type="file"
+                  onChange={handleProofUpload}
+                  className="bg-black border-white/10 hidden"
+                  id="proof-upload"
+                  accept="image/*,.pdf"
+                />
+                <Label
+                  htmlFor="proof-upload"
+                  className="flex-1 h-10 px-3 flex items-center justify-center border border-dashed border-white/20 rounded-lg cursor-pointer hover:bg-white/5 transition-colors"
+                >
+                  {uploadingProof ? "Uploading..." : (deductionProof ? "Change Document" : "Upload Evidence (JPG, PDF)")}
+                </Label>
+                {deductionProof && (
+                  <div className="h-10 w-10 bg-white/5 rounded-lg flex items-center justify-center">
+                    <CheckCircle className="h-5 w-5 text-emerald-500" />
+                  </div>
+                )}
+              </div>
+              {deductionProof && <p className="text-[10px] text-emerald-500/80">Documentation attached successfully.</p>}
+            </div>
+            <div className="p-4 bg-red-500/5 border border-red-500/10 rounded-xl flex items-start gap-3">
+              <AlertCircle className="h-4 w-4 text-red-500 mt-0.5" />
+              <p className="text-[10px] text-red-200/60 leading-relaxed uppercase tracking-tighter">
+                This action will reduce the refundable balance of the deposit. Ensure you have documentation supporting this deduction.
+              </p>
+            </div>
+            <Button
+              className="w-full h-12 bg-red-500 text-white hover:bg-red-600 font-bold"
+              disabled={isProcessing || !deductionAmount || !deductionReason}
+              onClick={handleDeduct}
+            >
+              {isProcessing ? "Processing..." : "Commit Charge"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

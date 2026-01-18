@@ -1,6 +1,23 @@
 "use server"
 
+import { createClient } from "@supabase/supabase-js"
 import { db } from "@/lib/database"
+
+function createAdminSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Missing Supabase credentials")
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  })
+}
 
 export async function createInspectionAction(data: {
   agreementId: string
@@ -82,6 +99,39 @@ export async function getInspectionByIdAction(inspectionId: string) {
   } catch (error) {
     console.error("[v0] getInspectionByIdAction error:", error)
     return null
+  }
+}
+
+export async function getInspectionsStatusForBookingsAction(bookingIds: string[]) {
+  if (!bookingIds.length) return {}
+
+  try {
+    const supabase = createAdminSupabase()
+    const { data, error } = await supabase
+      .from("vehicle_inspections")
+      .select("booking_id, inspection_type")
+      .in("booking_id", bookingIds)
+
+    if (error) throw error
+
+    // Group by booking_id
+    const statusMap: Record<string, { hasHandover: boolean, hasReturn: boolean }> = {}
+
+    // Initialize
+    bookingIds.forEach(id => {
+      statusMap[id] = { hasHandover: false, hasReturn: false }
+    })
+
+    data?.forEach((row: any) => {
+      if (!statusMap[row.booking_id]) return
+      if (row.inspection_type === "handover") statusMap[row.booking_id].hasHandover = true
+      if (row.inspection_type === "return") statusMap[row.booking_id].hasReturn = true
+    })
+
+    return statusMap
+  } catch (error) {
+    console.error("Error fetching inspection statuses:", error)
+    return {}
   }
 }
 

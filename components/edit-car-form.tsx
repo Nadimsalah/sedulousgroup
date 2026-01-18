@@ -14,7 +14,7 @@ import { updateCarAction, saveCarImagesAction, getCarImagesAction } from "@/app/
 
 export default function EditCarForm({ car }: { car: any }) {
   const router = useRouter()
-  
+
   // Determine back URL based on rental type
   const getBackUrl = () => {
     const rentalType = car.rental_type || car.rentalType
@@ -30,7 +30,7 @@ export default function EditCarForm({ car }: { car: any }) {
         return "/admin/cars"
     }
   }
-  
+
   const backUrl = getBackUrl()
   const getBackLabel = () => {
     switch (backUrl) {
@@ -45,7 +45,7 @@ export default function EditCarForm({ car }: { car: any }) {
     }
   }
   const backLabel = getBackLabel()
-  
+
   const [carData, setCarData] = useState({
     name: car.name || "",
     category: car.category || "Economy",
@@ -61,6 +61,7 @@ export default function EditCarForm({ car }: { car: any }) {
     safetyFeatures: car.features?.safety || [""],
     deviceFeatures: car.features?.device || [""],
     convenienceFeatures: car.features?.convenience || [""],
+    registrationNumber: car.registrationNumber || car.registration_number || "",
   })
 
   const [previewImages, setPreviewImages] = useState<string[]>([])
@@ -195,14 +196,10 @@ export default function EditCarForm({ car }: { car: any }) {
         fuelType: carData.fuelType,
         rating: Number.parseFloat(carData.rating),
         description: carData.description,
-        features: [
-          ...carData.safetyFeatures.filter((f: string) => f.trim() !== ""),
-          ...carData.deviceFeatures.filter((f: string) => f.trim() !== ""),
-          ...carData.convenienceFeatures.filter((f: string) => f.trim() !== ""),
-        ],
         safetyFeatures: carData.safetyFeatures.filter((f: string) => f.trim() !== ""),
         deviceFeatures: carData.deviceFeatures.filter((f: string) => f.trim() !== ""),
         convenienceFeatures: carData.convenienceFeatures.filter((f: string) => f.trim() !== ""),
+        registrationNumber: carData.registrationNumber,
       })
 
       console.log("[v0] Car updated successfully")
@@ -291,6 +288,19 @@ export default function EditCarForm({ car }: { car: any }) {
                     onChange={(e) => setCarData({ ...carData, name: e.target.value })}
                     placeholder="e.g., Mercedes A-Class"
                     required
+                    className="w-full"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="registrationNumber" className="text-sm font-medium mb-2 block">
+                    VRN (Registration Number) <span className="text-muted-foreground font-normal">(Optional)</span>
+                  </Label>
+                  <Input
+                    id="registrationNumber"
+                    value={carData.registrationNumber}
+                    onChange={(e) => setCarData({ ...carData, registrationNumber: e.target.value })}
+                    placeholder="e.g., AB12 CDE"
                     className="w-full"
                   />
                 </div>

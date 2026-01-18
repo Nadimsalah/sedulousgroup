@@ -47,7 +47,7 @@ export default function DamageReportsPage() {
     setIsLoading(true)
     try {
       console.log("[Damage Reports Page] Loading data...")
-    const [fetchedReports, fetchedVehicles] = await Promise.all([getDamageReports(), getCarsAction()])
+      const [fetchedReports, fetchedVehicles] = await Promise.all([getDamageReports(), getCarsAction()])
       console.log("[Damage Reports Page] Loaded reports:", fetchedReports.length)
       console.log("[Damage Reports Page] Loaded vehicles:", fetchedVehicles?.length || 0)
       setReports(fetchedReports || [])
@@ -56,7 +56,7 @@ export default function DamageReportsPage() {
       console.error("[Damage Reports Page] Error loading data:", error)
       toast.error("Failed to load damage reports")
     } finally {
-    setIsLoading(false)
+      setIsLoading(false)
     }
   }
 
@@ -99,43 +99,43 @@ export default function DamageReportsPage() {
         photosCount: uploadedPhotos.length,
       })
 
-    const result = await createDamageReport({
+      const result = await createDamageReport({
         vehicleId: newReport.vehicleId,
         damageType: newReport.damageType,
         severity: newReport.severity,
         description: newReport.description,
         locationOnVehicle: newReport.locationOnVehicle || undefined,
         incidentDate: newReport.incidentDate,
-      damagePhotos: uploadedPhotos,
-      damageVideos: [],
+        damagePhotos: uploadedPhotos,
+        damageVideos: [],
         estimatedCost: newReport.estimatedCost || undefined,
-      responsibleParty: "customer",
-      notes: "",
+        responsibleParty: "customer",
+        notes: "",
         bookingId: undefined,
         agreementId: undefined,
         customerId: undefined,
         reportedBy: undefined,
-    })
+      })
 
       console.log("[Damage Reports] Create result:", result)
 
-    if (result.success) {
+      if (result.success) {
         toast.success("Damage report created successfully!")
-      setShowCreateDialog(false)
+        setShowCreateDialog(false)
         // Reset form
-      setNewReport({
-        vehicleId: "",
-        damageType: "scratch",
-        severity: "minor",
-        description: "",
-        locationOnVehicle: "",
-        incidentDate: new Date().toISOString().split("T")[0],
-        estimatedCost: 0,
-      })
-      setUploadedPhotos([])
+        setNewReport({
+          vehicleId: "",
+          damageType: "scratch",
+          severity: "minor",
+          description: "",
+          locationOnVehicle: "",
+          incidentDate: new Date().toISOString().split("T")[0],
+          estimatedCost: 0,
+        })
+        setUploadedPhotos([])
         // Reload data
         await loadData()
-    } else {
+      } else {
         const errorMessage = result.error instanceof Error ? result.error.message : String(result.error)
         console.error("[Damage Reports] Failed to create report:", errorMessage)
         toast.error(`Failed to create report: ${errorMessage}`, {
@@ -166,8 +166,9 @@ export default function DamageReportsPage() {
       r.description?.toLowerCase().includes(query) ||
       r.damageType?.toLowerCase().includes(query) ||
       r.locationOnVehicle?.toLowerCase().includes(query) ||
-      vehicles.find((v) => v.id === r.vehicleId)?.name?.toLowerCase().includes(query)
-  )
+      vehicles.find((v) => v.id === r.vehicleId)?.name?.toLowerCase().includes(query) ||
+      vehicles.find((v) => v.id === r.vehicleId)?.registrationNumber?.toLowerCase().includes(query)
+    )
   })
 
   const getSeverityColor = (severity: string) => {
@@ -251,7 +252,7 @@ export default function DamageReportsPage() {
                       <SelectContent className="bg-black border-white/10">
                         {vehicles.map((v) => (
                           <SelectItem key={v.id} value={v.id}>
-                            {v.name} - {v.brand}
+                            {v.name} - {v.brand} {v.registrationNumber ? `(${v.registrationNumber})` : ""}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -429,7 +430,7 @@ export default function DamageReportsPage() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
             <Input
-              placeholder="Search by description, damage type, or vehicle..."
+              placeholder="Search by description, damage type, vehicle, or VRN..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/40"
@@ -448,11 +449,10 @@ export default function DamageReportsPage() {
               <button
                 key={filter.key}
                 onClick={() => setFilterStatus(filter.key as any)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  filterStatus === filter.key
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filterStatus === filter.key
                     ? "bg-gradient-to-r from-red-500 to-rose-600 text-white shadow-lg shadow-red-500/50"
                     : "bg-white/10 text-gray-300 hover:bg-white/20 border border-white/20"
-                }`}
+                  }`}
               >
                 {filter.label} ({filter.count})
               </button>
@@ -485,7 +485,12 @@ export default function DamageReportsPage() {
                     <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
                       <div className="flex-1">
                         <div className="flex items-start gap-2 mb-2">
-                          <h3 className="font-semibold text-white text-sm">{vehicle?.name || "Unknown Vehicle"}</h3>
+                          <h3 className="font-semibold text-white text-sm">
+                            {vehicle?.name || "Unknown Vehicle"}
+                            {vehicle?.registrationNumber && (
+                              <span className="ml-2 text-white/40 font-mono text-[10px]">[{vehicle.registrationNumber}]</span>
+                            )}
+                          </h3>
                           <Badge className={`text-xs ${getSeverityColor(report.severity)}`}>{report.severity}</Badge>
                           <Badge className={`text-xs ${getStatusColor(report.repairStatus)}`}>
                             {report.repairStatus}

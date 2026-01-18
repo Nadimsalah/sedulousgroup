@@ -371,7 +371,7 @@ export async function updateEmailSettings(settings: EmailSettings) {
       )
       .select()
       .single()
-
+      
     if (error) {
       console.error("[Settings] Error updating email settings:", error)
       
@@ -394,4 +394,3 @@ export async function updateEmailSettings(settings: EmailSettings) {
     }
   }
 }
-

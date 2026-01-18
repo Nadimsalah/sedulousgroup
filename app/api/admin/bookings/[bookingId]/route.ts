@@ -27,7 +27,10 @@ export async function GET(request: NextRequest, { params }: { params: { bookingI
           name,
           brand,
           category,
-          image
+          brand,
+          category,
+          image,
+          registration_number
         )
       `)
       .eq("id", bookingId)
