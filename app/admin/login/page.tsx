@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { createClient } from "@/lib/supabase/client"
+import Image from "next/image"
 import { ShieldCheck } from "lucide-react"
 
 export default function AdminLogin() {
@@ -93,17 +94,11 @@ export default function AdminLogin() {
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <div className="w-16 h-16 bg-gradient-to-br from-red-500 to-red-600 rounded-2xl flex items-center justify-center">
-              <ShieldCheck className="w-10 h-10 text-white" />
-            </div>
-          </div>
-          <h1 className="text-4xl font-bold text-white mb-2">SEDULOUS</h1>
-          <p className="text-neutral-400">Admin Dashboard Login</p>
+        <div className="text-center mb-8 flex flex-col items-center">
+          <h1 className="text-2xl font-bold text-white mb-2">Admin Dashboard</h1>
         </div>
 
-        <div className="bg-[#1a1a1a] rounded-lg p-8 border border-neutral-800">
+        <div className="bg-[#1a1a1a] rounded-lg p-8 border border-neutral-800 shadow-2xl">
           <form onSubmit={handleLogin} className="space-y-6">
             {error && (
               <div className="bg-red-500/10 border border-red-500/30 text-red-300 px-4 py-3 rounded-lg text-sm">
@@ -120,7 +115,7 @@ export default function AdminLogin() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@sedulousgroupltd.co.uk"
+                placeholder="sami@admin.com"
                 className="bg-[#0a0a0a] border-neutral-700 text-white h-12"
                 required
                 disabled={isLoading}
@@ -151,12 +146,6 @@ export default function AdminLogin() {
               {isLoading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
-
-          <div className="mt-6 p-3 bg-neutral-900 rounded-lg border border-neutral-800">
-            <p className="text-neutral-400 text-xs text-center">
-              Admin access restricted to @admin.com and @sedulousgroupltd.co.uk emails
-            </p>
-          </div>
         </div>
       </div>
     </div>

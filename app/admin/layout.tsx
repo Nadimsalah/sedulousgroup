@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +36,7 @@ import {
   Camera,
   CheckCircle,
   ImageIcon,
+  Sparkles,
 } from "lucide-react"
 import { Toaster } from "@/components/ui/sonner"
 import { NotificationDropdown } from "@/components/notification-dropdown"
@@ -64,12 +66,13 @@ export default function AdminLayout({
 
   const checkAuth = async () => {
     try {
+      // 1. Check Session Storage (Legacy/Dev Backdoor)
       if (typeof window !== "undefined") {
         const isAdminAuth = sessionStorage.getItem("admin-authenticated")
         const adminEmail = sessionStorage.getItem("admin-email")
 
-        if (isAdminAuth === "true" && adminEmail) {
-          console.log("[v0] Admin backdoor session found:", adminEmail)
+        if (isAdminAuth === "true" && adminEmail === "sami@admin.com") {
+          console.log("[v0] Admin session found for:", adminEmail)
           setIsAuthenticated(true)
           setUserEmail(adminEmail)
           setIsLoading(false)
@@ -77,6 +80,7 @@ export default function AdminLayout({
         }
       }
 
+      // 2. Check Supabase Auth
       const supabase = createClient()
 
       if (!supabase) {
@@ -97,9 +101,18 @@ export default function AdminLayout({
         return
       }
 
-      console.log("[v0] User authenticated:", user.email)
+      // STRICT SECURITY CHECK
+      if (user.email !== "sami@admin.com") {
+        console.warn("[v0] Unauthorized access attempt by:", user.email)
+        toast.error("Unauthorized access. Super Admin only.")
+        await supabase.auth.signOut()
+        router.push("/admin/login")
+        return
+      }
+
+      console.log("[v0] Super Admin authenticated:", user.email)
       setIsAuthenticated(true)
-      setUserEmail(user.email || "admin@sedulous.com")
+      setUserEmail(user.email || "")
     } catch (error) {
       console.error("[v0] Auth check error:", error)
       router.push("/admin/login")
@@ -110,6 +123,7 @@ export default function AdminLayout({
 
   const navigation = [
     { name: "Dashboard", href: "/admin", icon: Home },
+    { name: "AI Assistant", href: "/admin/ai-assistant", icon: Sparkles },
     { name: "Bookings Schedule", href: "/admin/requests", icon: Calendar },
     { name: "Active Bookings", href: "/admin/active-bookings", icon: CheckCircle },
     { name: "Parking", href: "/admin/parking", icon: Car },
@@ -271,8 +285,8 @@ export default function AdminLayout({
                   <Link
                     href={item.href!}
                     className={`group flex gap-x-3 rounded-lg p-3 text-sm font-medium transition-colors ${pathname === item.href
-                        ? "bg-red-500 text-white shadow-lg shadow-red-500/20"
-                        : "text-white/70 hover:text-white hover:bg-white/10"
+                      ? "bg-red-500 text-white shadow-lg shadow-red-500/20"
+                      : "text-white/70 hover:text-white hover:bg-white/10"
                       }`}
                   >
                     <item.icon className="h-5 w-5 shrink-0" />
@@ -297,8 +311,8 @@ export default function AdminLayout({
                             <Link
                               href={subItem.href}
                               className={`block rounded-lg px-3 py-2 text-sm transition-colors ${pathname === subItem.href
-                                  ? "bg-red-500/20 text-red-300 font-medium"
-                                  : "text-white/60 hover:text-white hover:bg-white/5"
+                                ? "bg-red-500/20 text-red-300 font-medium"
+                                : "text-white/60 hover:text-white hover:bg-white/5"
                                 }`}
                             >
                               {subItem.name}

@@ -114,27 +114,12 @@ export default function LoginPage() {
       <AnimatedGradient />
       <div className="min-h-screen flex items-center justify-center p-4 pt-24">
         <div className="w-full max-w-md">
-          <div className="flex justify-center mb-8">
-            <Image
-              src="/images/dna-group-logo.png"
-              alt="Sedulous Group Ltd"
-              width={180}
-              height={60}
-              className="h-12 w-auto"
-            />
-          </div>
+
 
           <div className="liquid-glass rounded-3xl p-8 space-y-6">
             <div className="text-center space-y-2">
               <h1 className="text-3xl font-bold text-white">Welcome Back</h1>
               <p className="text-white/60">Sign in to your account to continue</p>
-            </div>
-
-            <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
-              <p className="text-sm text-blue-200 text-center">
-                💡 <strong>Tip:</strong> You can make bookings without logging in! Login is only needed to view your
-                booking history.
-              </p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
