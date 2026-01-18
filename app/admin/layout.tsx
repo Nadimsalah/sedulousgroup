@@ -65,11 +65,60 @@ export default function AdminLayout({
   }, [isLoginPage])
 
   const checkAuth = async () => {
-    // SECURITY DISABLED BY USER REQUEST
-    console.warn("Security Disabled: Granting access to all users")
-    setIsAuthenticated(true)
-    setUserEmail("admin@bypassed.com")
-    setIsLoading(false)
+    try {
+      // 1. Check Session Storage (Legacy/Dev Backdoor)
+      if (typeof window !== "undefined") {
+        const isAdminAuth = sessionStorage.getItem("admin-authenticated")
+        const adminEmail = sessionStorage.getItem("admin-email")
+
+        if (isAdminAuth === "true" && adminEmail === "sami@admin.com") {
+          console.log("[v0] Admin session found for:", adminEmail)
+          setIsAuthenticated(true)
+          setUserEmail(adminEmail)
+          setIsLoading(false)
+          return
+        }
+      }
+
+      // 2. Check Supabase Auth
+      const supabase = createClient()
+
+      if (!supabase) {
+        console.log("[v0] Supabase not configured, redirecting to login")
+        router.push("/admin/login")
+        setIsLoading(false)
+        return
+      }
+
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser()
+
+      if (error || !user) {
+        console.log("[v0] No authenticated user, redirecting to login")
+        router.push("/admin/login")
+        return
+      }
+
+      // STRICT SECURITY CHECK
+      if (user.email !== "sami@admin.com") {
+        console.warn("[v0] Unauthorized access attempt by:", user.email)
+        toast.error("Unauthorized access. Super Admin only.")
+        await supabase.auth.signOut()
+        router.push("/admin/login")
+        return
+      }
+
+      console.log("[v0] Super Admin authenticated:", user.email)
+      setIsAuthenticated(true)
+      setUserEmail(user.email || "")
+    } catch (error) {
+      console.error("[v0] Auth check error:", error)
+      router.push("/admin/login")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const navigation = [
