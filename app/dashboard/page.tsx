@@ -724,7 +724,10 @@ export default function UserDashboard() {
           <TabsContent value="invoices" className="space-y-6">
             <h2 className="text-2xl font-bold text-white">My Invoices</h2>
 
-            {bookings.filter(b => ["approved", "paid", "confirmed", "active", "completed"].includes(b.status.toLowerCase())).length === 0 ? (
+            {bookings.filter(b => {
+              const status = b.status.toLowerCase();
+              return !['rejected', 'cancelled', 'pending', 'documents rejected'].includes(status);
+            }).length === 0 ? (
               <div className="bg-white/5 border border-white/10 rounded-2xl p-12 text-center">
                 <FileText className="w-16 h-16 text-gray-600 mx-auto mb-4" />
                 <p className="text-gray-400 text-lg">No invoices available</p>
@@ -733,7 +736,10 @@ export default function UserDashboard() {
             ) : (
               <div className="grid gap-4">
                 {bookings
-                  .filter(b => ["approved", "paid", "confirmed", "active", "completed"].includes(b.status.toLowerCase()))
+                  .filter(b => {
+                    const status = b.status.toLowerCase();
+                    return !['rejected', 'cancelled', 'pending', 'documents rejected'].includes(status);
+                  })
                   .map((booking) => (
                     <div
                       key={`inv-${booking.id}`}
