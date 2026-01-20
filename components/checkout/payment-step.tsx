@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import { loadStripe } from "@stripe/stripe-js"
-import { Elements, EmbeddedCheckoutProvider, EmbeddedCheckout } from "@stripe/react-stripe-js"
+import { EmbeddedCheckoutProvider, EmbeddedCheckout } from "@stripe/react-stripe-js"
 import { Loader2, CheckCircle2 } from "lucide-react"
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
@@ -18,31 +18,34 @@ interface PaymentStepProps {
 export function PaymentStep({
     clientSecret,
     onPaymentSuccess,
-    onPaymentError,
     totalAmount,
-    carName
 }: PaymentStepProps) {
-    const [paymentStatus, setPaymentStatus] = useState<'pending' | 'processing' | 'success' | 'error'>('pending')
-
     useEffect(() => {
         if (!clientSecret) return
 
-        // Listen for payment completion
-        const checkStatus = async () => {
+        // Poll for payment completion
+        const checkStatus = setInterval(async () => {
             try {
                 const stripe = await stripePromise
                 if (!stripe) return
 
-                // This will be called by the embedded checkout on completion
-                console.log('Payment form ready')
-            } catch (err) {
-                console.error('Error initializing payment:', err)
-                onPaymentError('Failed to initialize payment')
-            }
-        }
+                const { error, paymentIntent } = await stripe.retrievePaymentIntent(clientSecret)
 
-        checkStatus()
-    }, [clientSecret, onPaymentError])
+                if (paymentIntent?.status === 'succeeded') {
+                    clearInterval(checkStatus)
+                    setTimeout(() => onPaymentSuccess(), 1500)
+                }
+
+                if (error) {
+                    clearInterval(checkStatus)
+                }
+            } catch (err) {
+                console.error('Error checking payment:', err)
+            }
+        }, 2000)
+
+        return () => clearInterval(checkStatus)
+    }, [clientSecret, onPaymentSuccess])
 
     if (!clientSecret) {
         return (
@@ -78,14 +81,12 @@ export function PaymentStep({
 
             {/* Stripe Embedded Checkout */}
             <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-6 min-h-[400px]">
-                <Elements stripe={stripePromise} options={{ clientSecret }}>
-                    <EmbeddedCheckoutProvider
-                        stripe={stripePromise}
-                        options={{ clientSecret }}
-                    >
-                        <EmbeddedCheckout />
-                    </EmbeddedCheckoutProvider>
-                </Elements>
+                <EmbeddedCheckoutProvider
+                    stripe={stripePromise}
+                    options={{ clientSecret }}
+                >
+                    <EmbeddedCheckout />
+                </EmbeddedCheckoutProvider>
             </div>
 
             {/* Security Notice */}
