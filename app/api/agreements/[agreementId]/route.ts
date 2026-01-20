@@ -85,6 +85,28 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     console.log("[v0] Agreement updated successfully:", data.id)
+
+    // Trigger email if agreement was just signed (PDF uploaded)
+    if (body.signed_agreement_url) {
+      try {
+        const { sendSignedAgreementEmail } = await import("@/app/actions/email")
+        // We don't await this to avoid blocking the response, but we handle errors
+        sendSignedAgreementEmail(agreementId, body.signed_agreement_url)
+          .then(result => {
+            if (result.success) {
+              console.log("[v0] Signed agreement email triggered successfully")
+            } else {
+              console.error("[v0] Failed to send signed agreement email:", result.error)
+            }
+          })
+          .catch(err => {
+            console.error("[v0] Exception triggering signed agreement email:", err)
+          })
+      } catch (emailTriggerError) {
+        console.error("[v0] Failed to import/trigger email action:", emailTriggerError)
+      }
+    }
+
     return NextResponse.json({ success: true, agreement: data })
   } catch (error: any) {
     console.error("[v0] Error in PATCH agreement:", error)

@@ -55,10 +55,10 @@ export async function loadImage(src: string): Promise<{ dataUrl: string; width: 
     // For server-side, return with default dimensions
     return { dataUrl: src, width: 200, height: 200 }
   }
-  
+
   try {
     console.log("[PDF] Loading image from URL:", src.substring(0, 100))
-    
+
     // In browser, try to load image directly first (more reliable for same-origin)
     if (typeof window !== 'undefined' && typeof window.Image !== 'undefined' && !src.startsWith('http')) {
       // For relative paths in browser, try direct image loading first
@@ -110,13 +110,13 @@ export async function loadImage(src: string): Promise<{ dataUrl: string; width: 
         img.src = fullSrc
       })
     }
-    
+
     // Fetch image in both browser and server environments
     const response = await fetch(src)
     if (!response.ok) {
       throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`)
     }
-    
+
     const arrayBuffer = await response.arrayBuffer()
     let base64: string
     if (typeof Buffer !== 'undefined') {
@@ -133,7 +133,7 @@ export async function loadImage(src: string): Promise<{ dataUrl: string; width: 
     }
     const mimeType = response.headers.get('content-type') || 'image/png'
     const dataUrl = `data:${mimeType};base64,${base64}`
-    
+
     // Try to get dimensions if in browser
     if (typeof window !== 'undefined' && typeof window.Image !== 'undefined') {
       return new Promise((resolve, reject) => {
@@ -195,7 +195,7 @@ function addTable(
       // Draw border (draw after text to avoid overlap issues)
       doc.setDrawColor(200, 200, 200)
       doc.setLineWidth(0.5)
-      
+
       // Background for header (draw first)
       if (rowIndex === 0) {
         doc.setFillColor(245, 245, 245)
@@ -257,7 +257,7 @@ export async function generateRentalAgreementPDF(
     console.log("[PDF] Loading logo from:", logoPath)
     // Try to load logo - if it fails, try alternative paths
     let logoData: { dataUrl: string; width: number; height: number } | null = null
-    
+
     // Helper to convert relative paths to full URLs for both client and server-side
     const getFullUrl = (path: string): string => {
       if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("data:")) {
@@ -271,14 +271,14 @@ export async function generateRentalAgreementPDF(
         }
         // Server-side: use environment variables
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 
-                       process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
-                       (supabaseUrl ? new URL(supabaseUrl).origin : "http://localhost:3000")
+        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ||
+          process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
+          (supabaseUrl ? new URL(supabaseUrl).origin : "http://localhost:3000")
         return `${baseUrl}${path}`
       }
       return path
     }
-    
+
     try {
       const fullLogoPath = getFullUrl(logoPath)
       console.log("[PDF] Attempting to load logo from:", fullLogoPath)
@@ -311,13 +311,13 @@ export async function generateRentalAgreementPDF(
         throw new Error(`Failed to load logo. Tried: ${logoPath} and alternatives. Error: ${firstError instanceof Error ? firstError.message : String(firstError)}`)
       }
     }
-    
+
     if (!logoData) {
       throw new Error("Failed to load logo from all paths")
     }
-    
+
     console.log("[PDF] Logo loaded successfully, dimensions:", logoData.width, "x", logoData.height)
-    
+
     const logoWidth = 50 // mm - make it larger
     const logoHeight = (logoData.height / logoData.width) * logoWidth
     const logoX = margin
@@ -334,18 +334,18 @@ export async function generateRentalAgreementPDF(
     if (!logoData.dataUrl || logoData.dataUrl.length < 100) {
       throw new Error("Logo data URL is invalid or too short")
     }
-    
+
     console.log("[PDF] Adding logo to PDF - Format:", imageFormat, "Data URL length:", logoData.dataUrl.length)
     doc.addImage(logoData.dataUrl, imageFormat, logoX, yPosition, logoWidth, logoHeight)
     console.log("[PDF] ✓ Logo added to PDF at position:", logoX, yPosition, "Size:", logoWidth, "x", logoHeight, "Format:", imageFormat)
-    
+
     // Company info next to logo
     const companyX = logoX + logoWidth + 8
     doc.setFontSize(9)
     doc.setFont("helvetica", "bold")
     doc.setTextColor(0, 0, 0)
     doc.text(data.company_name, companyX, yPosition + 5)
-    
+
     doc.setFont("helvetica", "normal")
     doc.setTextColor(100, 100, 100)
     doc.setFontSize(8)
@@ -505,28 +505,28 @@ export async function generateRentalAgreementPDF(
 
   // Customer signature (Client Signature) - LEFT SIDE
   const hasCustomerSignature = data.customer_signature && data.customer_signature.trim().length > 0
-  console.log("[PDF] Checking customer signature:", hasCustomerSignature ? `Present (${data.customer_signature.substring(0, 50)}...)` : "Missing")
-  
+  console.log("[PDF] Checking customer signature:", hasCustomerSignature ? `Present (${data.customer_signature!.substring(0, 50)}...)` : "Missing")
+
   if (hasCustomerSignature) {
     try {
-      console.log("[PDF] Loading customer signature from:", data.customer_signature.substring(0, 100))
-      
+      console.log("[PDF] Loading customer signature from:", data.customer_signature!.substring(0, 100))
+
       // Validate signature format
-      if (!data.customer_signature.startsWith('data:image') && !data.customer_signature.startsWith('http')) {
-        throw new Error(`Invalid signature format. Expected data:image or http URL, got: ${data.customer_signature.substring(0, 50)}`)
+      if (!data.customer_signature!.startsWith('data:image') && !data.customer_signature!.startsWith('http')) {
+        throw new Error(`Invalid signature format. Expected data:image or http URL, got: ${data.customer_signature!.substring(0, 50)}`)
       }
-      
+
       // If it's already a base64 data URL, use it directly without fetch
       let customerSigData: { dataUrl: string; width: number; height: number }
-      
-      if (data.customer_signature.startsWith('data:image')) {
+
+      if (data.customer_signature!.startsWith('data:image')) {
         console.log("[PDF] Signature is base64 data URL, using directly")
-        
+
         // Validate base64 data URL format
-        if (!data.customer_signature.includes(',')) {
+        if (!data.customer_signature!.includes(',')) {
           throw new Error("Invalid base64 data URL format: missing comma separator")
         }
-        
+
         // Get dimensions from the image
         if (typeof window !== 'undefined' && typeof window.Image !== 'undefined') {
           customerSigData = await new Promise((resolve, reject) => {
@@ -534,7 +534,7 @@ export async function generateRentalAgreementPDF(
             const timeout = setTimeout(() => {
               reject(new Error("Timeout loading signature image"))
             }, 5000)
-            
+
             img.onload = () => {
               clearTimeout(timeout)
               console.log("[PDF] Base64 signature image loaded, dimensions:", img.width, "x", img.height)
@@ -546,38 +546,38 @@ export async function generateRentalAgreementPDF(
               // Still use the base64 data even if we can't get dimensions
               resolve({ dataUrl: data.customer_signature!, width: 200, height: 200 })
             }
-            img.src = data.customer_signature
+            img.src = data.customer_signature!
           })
         } else {
           // Server-side: use default dimensions
-          customerSigData = { dataUrl: data.customer_signature, width: 200, height: 200 }
+          customerSigData = { dataUrl: data.customer_signature!, width: 200, height: 200 }
         }
       } else {
         // It's a URL, use loadImage
         console.log("[PDF] Signature is URL, loading via loadImage...")
-        customerSigData = await loadImage(data.customer_signature)
+        customerSigData = await loadImage(data.customer_signature!)
       }
-      
+
       if (!customerSigData || !customerSigData.dataUrl) {
         throw new Error("Failed to load signature: empty data returned")
       }
-      
+
       console.log("[PDF] Customer signature image loaded successfully, dimensions:", customerSigData.width, "x", customerSigData.height)
-      
+
       // FIXED signature dimensions - same as admin signature
       const fixedSigWidth = 55 // Fixed width in mm
       const fixedSigHeight = 15 // Fixed height in mm
-      
+
       // FIXED X position - centered in left box with equal margins
       // Left box: from margin (12.7mm) to margin+sigColWidth (97.7mm)
       // Center signature horizontally in the box
       const sigX = margin + (sigColWidth - fixedSigWidth) / 2
-      
+
       // FIXED Y position - inside box, above Date line
       // signatureStartY is 10mm from box top
       // Place signature at signatureStartY + 4mm for proper spacing
       const sigY = signatureStartY + 4
-      
+
       // Use base64 data URL directly with FIXED dimensions
       doc.addImage(customerSigData.dataUrl, "PNG", sigX, sigY, fixedSigWidth, fixedSigHeight)
       console.log("[PDF] ✓ Customer signature added to PDF at FIXED position:", sigX, sigY, "Size:", fixedSigWidth, "x", fixedSigHeight)
@@ -586,7 +586,7 @@ export async function generateRentalAgreementPDF(
       console.error("[PDF] ✗ Could not load customer signature:", errorMessage)
       console.error("[PDF] Error details:", err)
       console.error("[PDF] Signature value was:", data.customer_signature ? `${data.customer_signature.substring(0, 200)}... (length: ${data.customer_signature.length})` : "undefined or null")
-      
+
       // Don't throw - instead draw a line and let the PDF generate without signature
       console.warn("[PDF] Continuing PDF generation without signature image")
       doc.setDrawColor(150, 150, 150)
@@ -607,23 +607,23 @@ export async function generateRentalAgreementPDF(
     try {
       console.log("[PDF] Loading admin signature:", data.admin_signature.substring(0, 50))
       const adminSigData = await loadImage(data.admin_signature)
-      
+
       // Calculate signature size to fit in the box properly
       const maxSigWidth = sigColWidth - 10 // Leave 5mm padding on each side
       const sigRatio = adminSigData.height / adminSigData.width
       let sigWidth = Math.min(maxSigWidth, 65)
       let sigHeight = sigWidth * sigRatio
-      
+
       // Limit height and recalculate width if needed
       if (sigHeight > signatureMaxHeight) {
         sigHeight = signatureMaxHeight
         sigWidth = sigHeight / sigRatio
       }
-      
+
       // Center the signature in the box
       const sigX = margin + sigColWidth + (sigColWidth - sigWidth) / 2
       const sigY = signatureStartY + 2
-      
+
       doc.addImage(adminSigData.dataUrl, "PNG", sigX, sigY, sigWidth, sigHeight)
       console.log("[PDF] Admin signature added to PDF at position:", sigX, sigY, "Size:", sigWidth, "x", sigHeight)
     } catch (err) {
@@ -669,3 +669,218 @@ export async function generateRentalAgreementPDF(
   return doc
 }
 
+export interface InvoiceData {
+  invoice_number: string
+  date: string
+  due_date: string
+  company_name: string
+  company_address: string
+  company_phone: string
+  company_email: string
+  customer_name: string
+  customer_address: string
+  customer_email: string
+  items: {
+    description: string
+    quantity: number
+    unit_price: number
+    total: number
+  }[]
+  subtotal: number
+  tax: number
+  total: number
+  notes?: string
+  company_reg?: string[] // Added for registration details
+}
+
+export async function generateInvoicePDF(
+  data: InvoiceData,
+  logoPathOrUrl?: string,
+): Promise<jsPDF> {
+  // Default logo path
+  const defaultLogoPath = "/sed.jpg"
+  const logoPath = logoPathOrUrl || defaultLogoPath
+  const doc = new jsPDF()
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const pageHeight = doc.internal.pageSize.getHeight()
+  const margin = 20
+  let yPosition = margin
+
+  // Header with Logo and Company Info
+  try {
+    // Try primary logo, then fallback
+    let logoData = null;
+    try {
+      logoData = await loadImage(logoPath);
+    } catch (e) {
+      try {
+        logoData = await loadImage("/images/dna-group-logo.png");
+      } catch (e2) {
+        console.warn("Failed to load invoice logos");
+      }
+    }
+
+    if (logoData) {
+      const logoWidth = 40
+      const logoHeight = (logoData.height / logoData.width) * logoWidth
+
+      // Determine format
+      let imageFormat: "PNG" | "JPEG" = "PNG"
+      if (logoData.dataUrl.startsWith('data:image/jpeg') || logoData.dataUrl.startsWith('data:image/jpg') || logoPath.toLowerCase().endsWith('.jpg')) {
+        imageFormat = "JPEG"
+      }
+
+      doc.addImage(logoData.dataUrl, imageFormat, margin, yPosition, logoWidth, logoHeight)
+
+      // Company Info (Right aligned)
+      doc.setFontSize(10)
+      doc.setFont("helvetica", "bold")
+      doc.text(data.company_name, pageWidth - margin, yPosition + 5, { align: "right" })
+
+      doc.setFont("helvetica", "normal")
+      doc.setFontSize(9)
+      doc.setTextColor(100, 100, 100)
+
+      let infoY = yPosition + 10
+      // Address - split if needed, though usually passed as single string with newlines if desired or we split here
+      const addressLines = doc.splitTextToSize(data.company_address, 80)
+      doc.text(addressLines, pageWidth - margin, infoY, { align: "right" })
+      infoY += (addressLines.length * 4) + 2
+
+      doc.text(data.company_phone, pageWidth - margin, infoY, { align: "right" })
+      infoY += 5
+      doc.text(data.company_email, pageWidth - margin, infoY, { align: "right" })
+
+      yPosition = Math.max(yPosition + logoHeight, infoY) + 15
+    } else {
+      // Fallback if no logo
+      doc.setFontSize(18)
+      doc.setFont("helvetica", "bold")
+      doc.text(data.company_name, margin, yPosition + 10)
+      yPosition += 20
+    }
+  } catch (e) {
+    console.error("Error loading logo for invoice:", e)
+    yPosition += 20
+  }
+
+  // Invoice Title and Details
+  doc.setFontSize(24)
+  doc.setFont("helvetica", "bold")
+  doc.setTextColor(220, 38, 38) // Red
+  doc.text("INVOICE", margin, yPosition)
+
+  // Invoice Meta (Number, Date)
+  doc.setFontSize(10)
+  doc.setTextColor(0, 0, 0)
+  doc.text(`Invoice #: ${data.invoice_number}`, pageWidth - margin, yPosition, { align: "right" })
+  doc.text(`Date: ${data.date}`, pageWidth - margin, yPosition + 5, { align: "right" })
+  doc.text(`Due Date: ${data.due_date}`, pageWidth - margin, yPosition + 10, { align: "right" })
+
+  yPosition += 20
+
+  // Bill To Section
+  doc.setFillColor(245, 245, 245)
+  doc.rect(margin, yPosition, pageWidth - margin * 2, 25, "F")
+
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(10)
+  doc.setTextColor(100, 100, 100)
+  doc.text("BILL TO:", margin + 5, yPosition + 7)
+
+  doc.setFont("helvetica", "bold")
+  doc.setTextColor(0, 0, 0)
+  doc.text(data.customer_name, margin + 5, yPosition + 14)
+
+  doc.setFont("helvetica", "normal")
+  doc.text(data.customer_address, margin + 5, yPosition + 19)
+
+  yPosition += 35
+
+  // Line Items Header
+  doc.setFillColor(220, 38, 38) // Red header
+  doc.rect(margin, yPosition, pageWidth - margin * 2, 10, "F")
+
+  doc.setTextColor(255, 255, 255)
+  doc.setFont("helvetica", "bold")
+  doc.text("DESCRIPTION", margin + 5, yPosition + 7)
+  doc.text("QTY", pageWidth - margin - 60, yPosition + 7, { align: "center" })
+  doc.text("PRICE", pageWidth - margin - 35, yPosition + 7, { align: "right" })
+  doc.text("TOTAL", pageWidth - margin - 5, yPosition + 7, { align: "right" })
+
+  yPosition += 10
+
+  // Items
+  doc.setTextColor(0, 0, 0)
+  doc.setFont("helvetica", "normal")
+
+  data.items.forEach((item, index) => {
+    // Zebra striping
+    if (index % 2 === 1) {
+      doc.setFillColor(250, 250, 250)
+      doc.rect(margin, yPosition, pageWidth - margin * 2, 10, "F")
+    }
+
+    doc.text(item.description, margin + 5, yPosition + 7)
+    doc.text(item.quantity.toString(), pageWidth - margin - 60, yPosition + 7, { align: "center" })
+    doc.text(`£${item.unit_price.toFixed(2)}`, pageWidth - margin - 35, yPosition + 7, { align: "right" })
+    doc.text(`£${item.total.toFixed(2)}`, pageWidth - margin - 5, yPosition + 7, { align: "right" })
+
+    yPosition += 10
+  })
+
+  yPosition += 5
+  doc.setDrawColor(200, 200, 200)
+  doc.line(margin, yPosition, pageWidth - margin, yPosition)
+  yPosition += 10
+
+  // Totals
+  const totalsX = pageWidth - margin - 60
+
+  doc.setFont("helvetica", "normal")
+  doc.text("Subtotal:", totalsX, yPosition, { align: "right" })
+  doc.text(`£${data.subtotal.toFixed(2)}`, pageWidth - margin - 5, yPosition, { align: "right" })
+
+  yPosition += 7
+  doc.text("VAT (20%):", totalsX, yPosition, { align: "right" }) // FIXED from Tax (0%)
+  doc.text(`£${data.tax.toFixed(2)}`, pageWidth - margin - 5, yPosition, { align: "right" })
+
+  yPosition += 10
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(12)
+  doc.text("Total:", totalsX, yPosition, { align: "right" })
+  doc.setTextColor(220, 38, 38)
+  doc.text(`£${data.total.toFixed(2)}`, pageWidth - margin - 5, yPosition, { align: "right" })
+
+  // Footer / Notes
+  if (data.notes) {
+    yPosition += 20
+    doc.setFontSize(10)
+    doc.setTextColor(0, 0, 0)
+    doc.setFont("helvetica", "bold")
+    doc.text("Notes:", margin, yPosition)
+
+    doc.setFont("helvetica", "normal")
+    doc.setTextColor(100, 100, 100)
+    doc.text(data.notes, margin, yPosition + 5, { maxWidth: pageWidth - margin * 2 })
+  }
+
+  // Company Registration Info (Footer)
+  if (data.company_reg && data.company_reg.length > 0) {
+    const footerY = pageHeight - 25
+    doc.setFontSize(8)
+    doc.setTextColor(100, 100, 100)
+    doc.setFont("helvetica", "normal")
+
+    data.company_reg.forEach((line, i) => {
+      doc.text(line, pageWidth / 2, footerY + (i * 4), { align: "center" })
+    })
+  } else {
+    // Original Footer
+    doc.setFontSize(8)
+    doc.setTextColor(150, 150, 150)
+    doc.text("Thank you for your business!", pageWidth / 2, pageHeight - 15, { align: "center" })
+  }
+
+  return doc
+}

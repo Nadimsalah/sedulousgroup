@@ -3,6 +3,7 @@
 import { createClient } from "@supabase/supabase-js"
 import { db } from "@/lib/database"
 import type { Deposit } from "@/lib/database"
+import { createFinanceTransaction } from "./finance"
 
 // Create admin client with service role to bypass RLS
 function createAdminSupabase() {
@@ -144,6 +145,21 @@ export async function refundDepositAction(
             return { success: false, error: updateError.message }
         }
 
+        // Record Finance Transaction
+        await createFinanceTransaction({
+            occurred_at: new Date().toISOString(),
+            direction: "out",
+            type: "refund",
+            source: "deposit",
+            status: "paid",
+            currency: "GBP",
+            amount_gross: refundAmount,
+            fees: 0,
+            amount_net: refundAmount,
+            deposit_id: id,
+            notes: `Deposit refund: ${notes || "No notes provided"}`,
+        })
+
         return { success: true }
     } catch (error) {
         console.error("[Deposits Action] Exception in refundDepositAction:", error)
@@ -197,6 +213,21 @@ export async function deductDepositAction(
             return { success: false, error: updateError.message }
         }
 
+        // Record Finance Transaction (Deduction is income we keep)
+        await createFinanceTransaction({
+            occurred_at: new Date().toISOString(),
+            direction: "in",
+            type: "damage_charge",
+            source: "deposit",
+            status: "paid",
+            currency: "GBP",
+            amount_gross: deductAmount,
+            fees: 0,
+            amount_net: deductAmount,
+            deposit_id: id,
+            notes: `Deposit deduction for ${reason}. ${notes || ""}`,
+        })
+
         return { success: true }
     } catch (error) {
         console.error("[Deposits Action] Exception in deductDepositAction:", error)
@@ -225,6 +256,24 @@ export async function createDepositAction(data: {
         if (!result) {
             return { success: false, error: "Failed to create deposit record" }
         }
+
+        // Record Finance Transaction
+        await createFinanceTransaction({
+            occurred_at: new Date().toISOString(),
+            direction: "in",
+            type: "deposit",
+            source: "booking",
+            status: "paid",
+            currency: "GBP",
+            amount_gross: data.amount,
+            fees: 0,
+            amount_net: data.amount,
+            booking_id: data.bookingId,
+            customer_id: data.customerId,
+            method: data.paymentMethod,
+            reference: data.transactionId,
+            notes: `Initial deposit received. ${data.notes || ""}`,
+        })
 
         return { success: true }
     } catch (error) {

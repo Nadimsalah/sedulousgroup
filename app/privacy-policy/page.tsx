@@ -327,12 +327,6 @@ export default function PrivacyPolicyPage() {
                   </span>
                 </li>
               </ul>
-              <p className="mt-6 leading-relaxed text-neutral-300">
-                Some of these third parties may also be considered a data controller in respect of holding your personal
-                data. In these cases, we will provide you with the privacy statements of those parties.
-              </p>
-            </Card>
-          </section>
 
           {/* Back to Home */}
           <div className="text-center pt-8">
@@ -342,7 +336,13 @@ export default function PrivacyPolicyPage() {
             >
               Back to Home
             </Link>
-          </div>
+          </div>              <p className="mt-6 leading-relaxed text-neutral-300">
+                Some of these third parties may also be considered a data controller in respect of holding your personal
+                data. In these cases, we will provide you with the privacy statements of those parties.
+              </p>
+            </Card>
+          </section>
+
         </div>
       </div>
 

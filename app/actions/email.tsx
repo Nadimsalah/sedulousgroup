@@ -61,7 +61,7 @@ async function getEmailConfig() {
   } catch (error) {
     console.log("[v0] Could not load email config from database:", error)
   }
-  
+
   // Fallback to defaults
   return {
     from: process.env.FROM_EMAIL || "noreply@sedulousgroup.net",
@@ -823,6 +823,7 @@ export async function sendPCNTicketEmail(ticketId: string) {
             ? "Congestion Charge"
             : "Traffic Ticket"
 
+    const emailConfig = await getEmailConfig()
     const { error: emailError } = await resendInstance.emails.send({
       from: `${emailConfig.fromName} <${emailConfig.from}>`,
       replyTo: emailConfig.replyTo,
@@ -881,30 +882,28 @@ export async function sendPCNTicketEmail(ticketId: string) {
                 <span class="detail-label">Ticket Type</span>
                 <span class="detail-value">${ticketTypeLabel}</span>
               </div>
-              ${
-                ticket.ticketNumber
-                  ? `
+              ${ticket.ticketNumber
+          ? `
               <div class="detail-row">
                 <span class="detail-label">Ticket Number</span>
                 <span class="detail-value">${ticket.ticketNumber}</span>
               </div>
               `
-                  : ""
-              }
+          : ""
+        }
               <div class="detail-row">
                 <span class="detail-label">Issue Date</span>
                 <span class="detail-value">${new Date(ticket.issueDate).toLocaleDateString("en-GB")}</span>
               </div>
-              ${
-                ticket.dueDate
-                  ? `
+              ${ticket.dueDate
+          ? `
               <div class="detail-row">
                 <span class="detail-label">Due Date</span>
                 <span class="detail-value">${new Date(ticket.dueDate).toLocaleDateString("en-GB")}</span>
               </div>
               `
-                  : ""
-              }
+          : ""
+        }
             </div>
 
             <div class="amount">
@@ -928,16 +927,15 @@ export async function sendPCNTicketEmail(ticketId: string) {
               </div>
             </div>
 
-            ${
-              ticket.notes
-                ? `
+            ${ticket.notes
+          ? `
             <div class="alert-box">
               <h3>Additional Notes</h3>
               <p>${ticket.notes}</p>
             </div>
             `
-                : ""
-            }
+          : ""
+        }
 
             <div class="card">
               <h2>What You Need to Do</h2>
@@ -1121,21 +1119,20 @@ export async function sendBookingProgressEmail(bookingId: string, stepCompleted:
               </div>
             </div>
 
-            ${
-              stepCompleted === "ready"
-                ? `
+            ${stepCompleted === "ready"
+          ? `
               <div class="alert-box">
                 <h3>✍️ Action Required: Sign Your Agreement</h3>
                 <p>All preparation steps are complete! Please review your rental agreement and vehicle details, then provide your signature to finalize your booking.</p>
               </div>
             `
-                : `
+          : `
               <div class="card">
                 <h2>Next Steps</h2>
                 <p>We're preparing everything for your rental. You'll receive notifications as we complete each step. Once everything is ready, you'll be asked to review and sign your agreement.</p>
               </div>
             `
-            }
+        }
 
             <div style="text-align: center;">
               <a href="${dashboardUrl}" class="cta-button">View Booking Details</a>
@@ -1167,6 +1164,139 @@ export async function sendBookingProgressEmail(bookingId: string, stepCompleted:
     return { success: true }
   } catch (err) {
     console.error("[v0] Exception sending booking progress email:", err)
+    return { success: false, error: err instanceof Error ? err.message : "Unknown error" }
+  }
+}
+
+export async function sendSignedAgreementEmail(agreementId: string, pdfUrl: string) {
+  console.log("[v0] sendSignedAgreementEmail called for agreement:", agreementId)
+
+  const resendInstance = await getResendInstance()
+  if (!resendInstance) {
+    console.log("[v0] Resend API Key missing. Email not sent.")
+    return { success: false, error: "Email service not configured" }
+  }
+
+  try {
+    const agreement = await db.getAgreementById(agreementId)
+    if (!agreement) {
+      return { success: false, error: "Agreement not found" }
+    }
+
+    const booking = await db.getBookingById(agreement.bookingId)
+    if (!booking) {
+      return { success: false, error: "Booking not found" }
+    }
+
+    const car = await db.getCar(booking.carId)
+    if (!car) {
+      return { success: false, error: "Car not found" }
+    }
+
+    const customerEmail = booking.customerEmail
+    if (!customerEmail) {
+      return { success: false, error: "Customer email not found" }
+    }
+
+    const origin = (await headers()).get("origin") || "https://sedulousgroup.net"
+    const logoUrl = `${origin}/images/dna-group-logo.png`
+
+    const emailConfig = await getEmailConfig()
+
+    const { error: emailError } = await resendInstance.emails.send({
+      from: `${emailConfig.fromName} <${emailConfig.from}>`,
+      replyTo: emailConfig.replyTo,
+      to: customerEmail,
+      subject: `📄 Signed Rental Agreement - ${agreement.agreementNumber}`,
+      attachments: [
+        {
+          filename: `Rental_Agreement_${agreement.agreementNumber}.pdf`,
+          path: pdfUrl,
+        },
+      ],
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body { background-color: #000000; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 0; }
+            .container { max-width: 650px; margin: 0 auto; padding: 40px 20px; background-color: #0a0a0a; border-radius: 16px; border: 1px solid #1f1f1f; }
+            .logo { text-align: center; margin-bottom: 40px; }
+            .logo img { height: 40px; width: auto; }
+            .header { text-align: center; margin-bottom: 40px; }
+            .header h1 { color: #22c55e; font-size: 28px; margin: 0 0 10px 0; font-weight: 700; }
+            .header p { color: #a1a1aa; font-size: 16px; margin: 0; }
+            .card { background-color: #111111; border: 1px solid #1f1f1f; border-radius: 12px; padding: 25px; margin: 20px 0; }
+            .card h2 { color: #ffffff; font-size: 20px; margin: 0 0 20px 0; font-weight: 600; }
+            .detail-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #1f1f1f; }
+            .detail-row:last-child { border-bottom: none; }
+            .detail-label { color: #a1a1aa; font-size: 14px; }
+            .detail-value { color: #ffffff; font-size: 14px; font-weight: 600; text-align: right; }
+            .info-box { background-color: #1a1a1a; border-left: 4px solid #22c55e; padding: 20px; margin: 25px 0; border-radius: 8px; }
+            .info-box p { color: #d4d4d8; margin: 8px 0; line-height: 1.6; font-size: 14px; }
+            .footer { margin-top: 40px; border-top: 1px solid #1f1f1f; padding-top: 30px; text-align: center; color: #52525b; font-size: 13px; line-height: 1.6; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="logo">
+              <img src="${logoUrl}" alt="Sedulous Group Ltd" />
+            </div>
+            
+            <div class="header">
+              <h1>✓ Agreement Signed Successfully</h1>
+              <p>Thank you for choosing Sedulous Group</p>
+            </div>
+
+            <div class="card">
+              <h2>Agreement Details</h2>
+              <div class="detail-row">
+                <span class="detail-label">Agreement Number</span>
+                <span class="detail-value">${agreement.agreementNumber}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Vehicle</span>
+                <span class="detail-value">${car.name}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Customer</span>
+                <span class="detail-value">${booking.customerName}</span>
+              </div>
+            </div>
+
+            <div class="info-box">
+              <p><strong style="color: #22c55e;">Important: Signed Copy Attached</strong></p>
+              <p>Please find attached a copy of your signed rental agreement for your records. We recommend keeping this document for the duration of your rental.</p>
+            </div>
+
+            <div class="card">
+              <h2>What's Next?</h2>
+              <p style="color: #d4d4d8; line-height: 1.6; margin: 0;">
+                • Your vehicle is now officially processed for hire<br/>
+                • You will receive additional instructions if anything else is needed<br/>
+                • Safe driving!
+              </p>
+            </div>
+
+            <div class="footer">
+              <p style="margin: 0 0 10px 0;">&copy; ${new Date().getFullYear()} Sedulous Group Ltd. All rights reserved.</p>
+              <p style="margin: 0; color: #3f3f46;">Premium Car Rental & Hire Services</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+    })
+
+    if (emailError) {
+      console.error("[v0] Error sending signed agreement email:", emailError)
+      return { success: false, error: "Failed to send email" }
+    }
+
+    console.log("[v0] Signed agreement email sent successfully to:", customerEmail)
+    return { success: true }
+  } catch (err) {
+    console.error("[v0] Exception sending signed agreement email:", err)
     return { success: false, error: err instanceof Error ? err.message : "Unknown error" }
   }
 }

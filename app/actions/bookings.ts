@@ -3,6 +3,7 @@
 import { createClient } from "@supabase/supabase-js"
 import { cookies } from "next/headers"
 import { createServerClient } from "@supabase/ssr"
+import { createFinanceTransaction } from "./finance"
 
 // Create admin client with service role to bypass RLS
 function createAdminSupabase() {
@@ -116,7 +117,7 @@ export async function getAllBookingsAction(): Promise<{
     }
 
     // Get unique car IDs
-    const carIds = [...new Set(bookings.map((b) => b.car_id).filter(Boolean))]
+    const carIds = [...new Set(bookings.map((b: any) => b.car_id).filter(Boolean))]
 
     // Fetch cars
     let carsMap: Record<string, any> = {}
@@ -197,6 +198,45 @@ export async function updateBookingStatusAction(
 
     if (error) {
       return { success: false, error: error.message }
+    }
+
+    // Record Finance Transaction if the status is becoming active or confirmed
+    const statusLower = newStatus.toLowerCase()
+    if (statusLower === "active" || statusLower === "confirmed") {
+      // Fetch booking details for the ledger
+      const { data: booking } = await supabase
+        .from("bookings")
+        .select("*")
+        .eq("id", bookingId)
+        .single()
+
+      if (booking && booking.total_amount > 0) {
+        // Check if transaction already exists (to prevent duplicates on re-send or status toggle)
+        const { data: existingTx } = await supabase
+          .from("finance_transactions")
+          .select("id")
+          .eq("booking_id", bookingId)
+          .eq("type", "booking_payment")
+          .maybeSingle()
+
+        if (!existingTx) {
+          await createFinanceTransaction({
+            occurred_at: new Date().toISOString(),
+            direction: "in",
+            type: "booking_payment",
+            source: "booking",
+            status: "paid", // Assuming active/confirmed means paid or committed
+            currency: "GBP",
+            amount_gross: booking.total_amount,
+            fees: 0,
+            amount_net: booking.total_amount,
+            booking_id: bookingId,
+            customer_id: booking.user_id || booking.customer_id,
+            vehicle_id: booking.car_id,
+            notes: `Revenue recorded automatically for booking status: ${newStatus}`,
+          })
+        }
+      }
     }
 
     return { success: true }

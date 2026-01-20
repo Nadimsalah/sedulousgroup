@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { useRouter } from "next/navigation"
 import {
   getNotifications,
   getUnreadCount,
@@ -16,9 +17,37 @@ import {
   deleteNotification,
   type Notification,
 } from "@/app/actions/notifications"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { formatDistanceToNow } from "date-fns"
+import { createClient } from "@/lib/supabase/client"
+
+// Helper to play a notification sound using Web Audio API
+const playNotificationSound = () => {
+  try {
+    const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext
+    if (!AudioContextClass) return
+
+    const audioContext = new AudioContextClass()
+    const oscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+
+    oscillator.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+
+    oscillator.type = "sine"
+    // Gentle "ding" sound
+    oscillator.frequency.setValueAtTime(880, audioContext.currentTime) // A5
+    oscillator.frequency.exponentialRampToValueAtTime(440, audioContext.currentTime + 0.5) // A4
+
+    gainNode.gain.setValueAtTime(0.1, audioContext.currentTime)
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
+
+    oscillator.start()
+    oscillator.stop(audioContext.currentTime + 0.5)
+  } catch (e) {
+    console.warn("Audio feedback failed:", e)
+  }
+}
 
 export function NotificationDropdown() {
   const router = useRouter()
@@ -31,17 +60,65 @@ export function NotificationDropdown() {
     loadNotifications()
     loadUnreadCount()
 
-    // Poll for new notifications every 30 seconds
+    // Set up Realtime subscription
+    const supabase = createClient()
+    if (!supabase) {
+      console.warn("[Notifications] Supabase client not available for realtime")
+      return
+    }
+
+    console.log("[Notifications] Subscribing to real-time notifications...")
+    const channel = supabase
+      .channel("admin_notifications")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+        },
+        (payload) => {
+          console.log("[Notifications] New notification received:", payload.new)
+          const newNotification = payload.new as Notification
+
+          // Update local state
+          setNotifications((prev) => [newNotification, ...prev])
+          setUnreadCount((prev) => prev + 1)
+
+          // Sound and Animation (Toast)
+          playNotificationSound()
+          toast.message(newNotification.title, {
+            description: newNotification.message,
+            duration: 5000,
+            action: newNotification.link
+              ? {
+                label: "View",
+                onClick: () => {
+                  if (newNotification.link) router.push(newNotification.link)
+                },
+              }
+              : undefined,
+          })
+        },
+      )
+      .subscribe((status) => {
+        console.log("[Notifications] Subscription status:", status)
+      })
+
+    // Set up Polling Fallback
     const interval = setInterval(() => {
       loadUnreadCount()
-    }, 30000)
+    }, 10000) // Poll for unread count every 10 seconds
 
-    return () => clearInterval(interval)
+    return () => {
+      supabase.removeChannel(channel)
+      clearInterval(interval)
+    }
   }, [])
 
   const loadNotifications = async () => {
     setLoading(true)
-    const result = await getNotifications(20)
+    const result = await getNotifications(50)
     if (result.success) {
       setNotifications(result.data)
     }
@@ -149,9 +226,8 @@ export function NotificationDropdown() {
                 <div
                   key={notification.id}
                   onClick={() => handleMarkAsRead(notification.id, notification.link)}
-                  className={`p-4 hover:bg-white/5 cursor-pointer transition-colors ${
-                    !notification.read ? "bg-white/5" : ""
-                  }`}
+                  className={`p-4 hover:bg-white/5 cursor-pointer transition-colors ${!notification.read ? "bg-white/5" : ""
+                    }`}
                 >
                   <div className="flex items-start gap-3">
                     <div className="text-2xl mt-0.5 flex-shrink-0">{getNotificationIcon(notification.type)}</div>
@@ -182,20 +258,18 @@ export function NotificationDropdown() {
           )}
         </ScrollArea>
 
-        {notifications.length > 0 && (
-          <div className="p-3 border-t border-white/10">
-            <Button
-              variant="ghost"
-              className="w-full text-xs text-white/60 hover:text-white hover:bg-white/10"
-              onClick={() => {
-                router.push("/admin/notifications")
-                setOpen(false)
-              }}
-            >
-              View all notifications
-            </Button>
-          </div>
-        )}
+        <div className="p-3 border-t border-white/10">
+          <Button
+            variant="ghost"
+            className="w-full text-xs text-white/60 hover:text-white hover:bg-white/10"
+            onClick={() => {
+              router.push("/admin/notifications")
+              setOpen(false)
+            }}
+          >
+            View all notifications
+          </Button>
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   )

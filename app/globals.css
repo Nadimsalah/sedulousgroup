@@ -118,6 +118,7 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
   }
@@ -169,18 +170,15 @@
 }
 
 .glass-border:hover {
-  filter: drop-shadow(0 0 2px rgba(255, 0, 0, 0.1)) drop-shadow(1px 0 2px rgba(0, 255, 0, 0.08))
-    drop-shadow(-1px 0 2px rgba(0, 0, 255, 0.06));
+  filter: drop-shadow(0 0 2px rgba(255, 0, 0, 0.1)) drop-shadow(1px 0 2px rgba(0, 255, 0, 0.08)) drop-shadow(-1px 0 2px rgba(0, 0, 255, 0.06));
 }
 
 .glass-border-enhanced:hover {
-  filter: drop-shadow(0 0 3px rgba(255, 0, 0, 0.12)) drop-shadow(1px 0 3px rgba(0, 255, 0, 0.1))
-    drop-shadow(-1px 0 3px rgba(0, 0, 255, 0.08));
+  filter: drop-shadow(0 0 3px rgba(255, 0, 0, 0.12)) drop-shadow(1px 0 3px rgba(0, 255, 0, 0.1)) drop-shadow(-1px 0 3px rgba(0, 0, 255, 0.08));
 }
 
 .glass-border-subtle:hover {
-  filter: drop-shadow(0 0 1px rgba(255, 0, 0, 0.06)) drop-shadow(0.5px 0 1px rgba(0, 255, 0, 0.05))
-    drop-shadow(-0.5px 0 1px rgba(0, 0, 255, 0.04));
+  filter: drop-shadow(0 0 1px rgba(255, 0, 0, 0.06)) drop-shadow(0.5px 0 1px rgba(0, 255, 0, 0.05)) drop-shadow(-0.5px 0 1px rgba(0, 0, 255, 0.04));
 }
 
 /* Logo Marquee Animations */
@@ -188,6 +186,7 @@
   0% {
     transform: translateX(-33.333%);
   }
+
   100% {
     transform: translateX(0%);
   }
@@ -197,6 +196,7 @@
   0% {
     transform: translateX(0%);
   }
+
   100% {
     transform: translateX(-33.333%);
   }
@@ -224,6 +224,64 @@
 .scrollbar-hide::-webkit-scrollbar,
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* Modern Admin Sidebar Scrollbar */
+.admin-sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(239, 68, 68, 0.3) transparent;
+}
+
+.admin-sidebar-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.admin-sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 10px;
+}
+
+.admin-sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(239, 68, 68, 0.3);
+  border-radius: 10px;
+  transition: all 0.3s ease;
+}
+
+.admin-sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(239, 68, 68, 0.5);
+  width: 8px;
+}
+
+.admin-sidebar-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(239, 68, 68, 0.4);
+}
+
+/* Smooth scroll behavior */
+.admin-sidebar-scroll {
+  scroll-behavior: smooth;
+}
+
+/* Custom Modern Scrollbar */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 /* Hide v0 preview badge */

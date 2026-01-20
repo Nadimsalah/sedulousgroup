@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label"
 import { getCarAction } from "@/app/actions/database"
 import { createClient } from "@/lib/supabase/client"
 import { RequiredDocuments, type DocumentData } from "@/components/checkout/required-documents"
+import { validateBookingDuration, getBookingConstraints } from "@/app/actions/booking-validation"
+import { getActiveLocations } from "@/app/actions/locations"
 
 interface Car {
   id: string
@@ -36,6 +38,7 @@ export default function CheckoutPage() {
   const [user, setUser] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [currentStep, setCurrentStep] = useState(1) // 1: Personal Info, 2: Documents, 3: Confirm
+  const [bookingConstraints, setBookingConstraints] = useState<any>(null)
 
   // Trip details from URL params
   const [tripDetails, setTripDetails] = useState({
@@ -65,6 +68,9 @@ export default function CheckoutPage() {
       setIsLoading(true)
 
       try {
+        const locations = await getActiveLocations()
+        const defaultLocation = locations.length > 0 ? locations[0].name : "London, UK"
+
         // Check auth state
         const supabase = createClient()
         if (supabase) {
@@ -86,8 +92,9 @@ export default function CheckoutPage() {
 
         // Get car data
         const carId = searchParams.get("carId")
+        let foundCar = null
         if (carId) {
-          const foundCar = await getCarAction(carId)
+          foundCar = await getCarAction(carId)
           if (foundCar) {
             setCar(foundCar)
           } else {
@@ -108,13 +115,32 @@ export default function CheckoutPage() {
         const dropoffTime = searchParams.get("dropoffTime")
 
         setTripDetails({
-          pickupLocation: pickup || "London, UK",
-          dropoffLocation: dropoff || "London, UK",
+          pickupLocation: pickup || defaultLocation,
+          dropoffLocation: dropoff || defaultLocation,
           pickupDate: pickupDate || "",
           dropoffDate: dropoffDate || "",
           pickupTime: pickupTime || "10:00",
           dropoffTime: dropoffTime || "10:00",
         })
+
+        // Get booking constraints for this rental type
+        if (foundCar) {
+          const rentalType = (foundCar.rentalType || foundCar.rental_type || "Rent") as "Rent" | "Flexi Hire" | "PCO Hire"
+          const constraints = await getBookingConstraints(rentalType)
+          setBookingConstraints(constraints)
+
+          // Validate booking duration if dates are provided
+          if (pickupDate && dropoffDate) {
+            const pickup = new Date(pickupDate)
+            const dropoff = new Date(dropoffDate)
+            const days = Math.ceil((dropoff.getTime() - pickup.getTime()) / (1000 * 60 * 60 * 24))
+            const validation = await validateBookingDuration(rentalType, days)
+
+            if (!validation.isValid) {
+              setError(validation.error || "Invalid booking duration")
+            }
+          }
+        }
       } catch (err) {
         console.error("[v0] Error initializing checkout:", err)
         setError("Failed to load checkout")
@@ -138,7 +164,7 @@ export default function CheckoutPage() {
   const totalAmount = car ? car.pricePerDay * rentalDays : 0
   const bookingType = (car?.rentalType || car?.rental_type || "Rent") as "Rent" | "Flexi Hire" | "PCO Hire"
 
-  const validatePersonalInfo = () => {
+  const validatePersonalInfo = async () => {
     if (!formData.firstName || !formData.lastName) {
       setError("Please enter your full name")
       return false
@@ -159,12 +185,20 @@ export default function CheckoutPage() {
       setError("Please select pickup and dropoff dates")
       return false
     }
+
+    // Validate booking duration against service settings
+    const validation = await validateBookingDuration(bookingType, rentalDays)
+    if (!validation.isValid) {
+      setError(validation.error || "Invalid booking duration")
+      return false
+    }
+
     setError(null)
     return true
   }
 
-  const handleContinueToDocuments = () => {
-    if (validatePersonalInfo()) {
+  const handleContinueToDocuments = async () => {
+    if (await validatePersonalInfo()) {
       setCurrentStep(2)
     }
   }
@@ -290,24 +324,21 @@ export default function CheckoutPage() {
               { step: 3, label: "Confirm" },
             ].map(({ step, label }, index) => (
               <div key={step} className="flex items-center">
-                <div 
-                  className={`flex items-center gap-2 rounded-full px-3 py-2 sm:px-4 ${
-                    currentStep >= step 
-                      ? "bg-red-500 text-white" 
-                      : "bg-zinc-800 text-gray-400"
-                  }`}
+                <div
+                  className={`flex items-center gap-2 rounded-full px-3 py-2 sm:px-4 ${currentStep >= step
+                    ? "bg-red-500 text-white"
+                    : "bg-zinc-800 text-gray-400"
+                    }`}
                 >
-                  <div className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
-                    currentStep > step ? "bg-white text-red-500" : "bg-white/20"
-                  }`}>
+                  <div className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${currentStep > step ? "bg-white text-red-500" : "bg-white/20"
+                    }`}>
                     {currentStep > step ? <CheckCircle2 className="h-4 w-4" /> : step}
                   </div>
                   <span className="hidden text-sm font-medium sm:inline">{label}</span>
                 </div>
                 {index < 2 && (
-                  <div className={`mx-2 h-0.5 w-8 sm:w-12 ${
-                    currentStep > step ? "bg-red-500" : "bg-zinc-700"
-                  }`} />
+                  <div className={`mx-2 h-0.5 w-8 sm:w-12 ${currentStep > step ? "bg-red-500" : "bg-zinc-700"
+                    }`} />
                 )}
               </div>
             ))}
@@ -435,6 +466,11 @@ export default function CheckoutPage() {
                         <p className="text-gray-400">
                           {rentalDays} day{rentalDays > 1 ? "s" : ""} rental
                         </p>
+                        {bookingConstraints && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            {bookingType}: {bookingConstraints.minDays}-{bookingConstraints.maxDays} days allowed
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -607,12 +643,11 @@ export default function CheckoutPage() {
 
                   <h3 className="mb-1 text-xl font-bold text-white">{car.name}</h3>
                   <p className="mb-2 text-sm text-gray-400">{car.category}</p>
-                  
-                  <div className={`inline-block px-3 py-1 rounded-full text-xs font-semibold mb-4 ${
-                    bookingType === "Rent" ? "bg-green-500/20 text-green-400" :
+
+                  <div className={`inline-block px-3 py-1 rounded-full text-xs font-semibold mb-4 ${bookingType === "Rent" ? "bg-green-500/20 text-green-400" :
                     bookingType === "Flexi Hire" ? "bg-blue-500/20 text-blue-400" :
-                    "bg-purple-500/20 text-purple-400"
-                  }`}>
+                      "bg-purple-500/20 text-purple-400"
+                    }`}>
                     {bookingType}
                   </div>
 

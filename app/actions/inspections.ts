@@ -48,8 +48,6 @@ export async function createInspectionAction(data: {
     const inspection = await db.createVehicleInspection({
       ...data,
       inspectedAt: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     })
 
     if (!inspection) {
@@ -58,6 +56,26 @@ export async function createInspectionAction(data: {
     }
 
     console.log("[Inspections Action] Inspection created successfully:", inspection.id)
+
+    // Create notification for admin if it's a return
+    if (data.inspectionType === "return") {
+      try {
+        const supabase = createAdminSupabase()
+        await supabase.from("notifications").insert({
+          title: "Car Returned",
+          message: `Vehicle ${data.vehicleId} has been returned and needs inspection.`,
+          type: "damage",
+          link: `/admin/inspections/${data.bookingId}`,
+          read: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        console.log("[Inspections Action] Notification created for car return")
+      } catch (notificationError) {
+        console.error("[Inspections Action] Failed to create notification:", notificationError)
+      }
+    }
+
     return { success: true, inspection }
   } catch (error) {
     console.error("[Inspections Action] createInspectionAction error:", error)
@@ -139,7 +157,7 @@ export async function getInspectionsByVehicleId(vehicleId: string) {
   console.log("[v0] getInspectionsByVehicleId called for vehicle:", vehicleId)
 
   try {
-    const inspections = await db.getInspectionsByVehicle(vehicleId)
+    const inspections = await db.getInspectionsByVehicleId(vehicleId)
     return inspections || []
   } catch (error) {
     console.error("[v0] getInspectionsByVehicleId error:", error)

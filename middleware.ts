@@ -1,26 +1,49 @@
+import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { updateSession } from "@/lib/supabase/middleware"
 
 export async function middleware(request: NextRequest) {
-  const supabaseResponse = await updateSession(request)
+  const { pathname } = request.nextUrl
 
-  // If Supabase middleware returned a redirect, use it
-  if (supabaseResponse.status !== 200) {
-    return supabaseResponse
-  }
-
-  // Check admin routes separately (admin uses cookie-based auth, not Supabase)
+  // Skip maintenance check for admin routes and API routes
   if (
-    request.nextUrl.pathname === "/admin" ||
-    (request.nextUrl.pathname.startsWith("/admin/") && !request.nextUrl.pathname.startsWith("/admin/login"))
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/api") ||
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/images") ||
+    pathname === "/maintenance"
   ) {
-    // Admin routes are now protected by Supabase auth, not cookie
-    // The admin layout will handle authentication check
+    return NextResponse.next()
   }
 
-  return supabaseResponse
+  // Check maintenance mode
+  try {
+    const baseUrl = request.nextUrl.origin
+    const response = await fetch(`${baseUrl}/api/settings/maintenance`, {
+      cache: "no-store",
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      if (data.maintenanceMode === true) {
+        return NextResponse.redirect(new URL("/maintenance", request.url))
+      }
+    }
+  } catch (error) {
+    console.error("Error checking maintenance mode:", error)
+  }
+
+  return NextResponse.next()
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: [
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public folder
+     */
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 }

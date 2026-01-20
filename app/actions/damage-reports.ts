@@ -10,15 +10,15 @@ export async function createDamageReport(data: {
   bookingId?: string
   vehicleId: string
   customerId?: string
-  damageType: string
-  severity: string
+  damageType: "accident" | "scratch" | "dent" | "mechanical" | "interior" | "other"
+  severity: "minor" | "moderate" | "severe"
   description: string
   locationOnVehicle?: string
   incidentDate: string
   damagePhotos: string[]
   damageVideos: string[]
   estimatedCost?: number
-  responsibleParty?: string
+  responsibleParty?: "customer" | "company" | "third_party"
   notes?: string
   reportedBy?: string
 }) {
@@ -38,8 +38,8 @@ export async function createDamageReport(data: {
       vehicleId: data.vehicleId,
       customerId: data.customerId || undefined,
       damageType: data.damageType,
-        severity: data.severity,
-        description: data.description,
+      severity: data.severity,
+      description: data.description,
       locationOnVehicle: data.locationOnVehicle || undefined,
       incidentDate: data.incidentDate,
       reportedDate: new Date().toISOString(),
@@ -50,7 +50,7 @@ export async function createDamageReport(data: {
       responsibleParty: data.responsibleParty || undefined,
       notes: data.notes || undefined,
       reportedBy: data.reportedBy || undefined,
-      })
+    })
 
     if (!report) {
       console.error("[Damage Reports] Failed to create damage report - no data returned")
@@ -58,6 +58,26 @@ export async function createDamageReport(data: {
     }
 
     console.log("[Damage Reports] Damage report created successfully:", report.id)
+
+    // Create notification for admin
+    try {
+      const adminSupabase = await createAdminClient()
+      if (adminSupabase) {
+        await adminSupabase.from("notifications").insert({
+          title: "New Damage Report",
+          message: `${data.damageType.toUpperCase()} report received for vehicle ${data.vehicleId} (${data.severity} severity)`,
+          type: "damage",
+          link: `/admin/damage-reports`,
+          read: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        console.log("[Damage Reports] Notification created for damage report")
+      }
+    } catch (notificationError) {
+      console.error("[Damage Reports] Failed to create notification:", notificationError)
+    }
+
     return { success: true, report }
   } catch (error) {
     console.error("[Damage Reports] Error creating damage report:", error)
@@ -89,7 +109,7 @@ export async function getDamageReports(): Promise<DamageReport[]> {
 
     console.log(`[Damage Reports] Found ${data?.length || 0} damage reports`)
 
-    return (data || []).map((report) => ({
+    return (data || []).map((report: any) => ({
       id: report.id,
       agreementId: report.agreement_id,
       bookingId: report.booking_id,
@@ -133,7 +153,7 @@ export async function getDamageReportsByVehicle(vehicleId: string): Promise<Dama
 
     if (error) throw error
 
-    return (data || []).map((report) => ({
+    return (data || []).map((report: any) => ({
       id: report.id,
       agreementId: report.agreement_id,
       bookingId: report.booking_id,

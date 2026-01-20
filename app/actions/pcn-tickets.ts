@@ -4,6 +4,7 @@ import { db } from "@/lib/database"
 import type { PCNTicket } from "@/lib/database"
 import { sendPCNTicketEmail } from "./email"
 import { createClient } from "@/lib/supabase/server"
+import { createFinanceTransaction } from "./finance"
 
 // UUID validation helper
 function isValidUUID(str: string): boolean {
@@ -60,6 +61,24 @@ export async function createPCNTicketAction(data: {
     })
 
     console.log("[v0] PCN Ticket created:", ticket)
+
+    // Create notification for admin
+    try {
+      const adminSupabase = await createClient() // We'll use the admin client logic from inside createPCNTicket if needed, but here we can just use another insert
+      await adminSupabase.from("notifications").insert({
+        title: "New PCN Ticket",
+        message: `${data.ticketType.toUpperCase()} ticket ${data.ticketNumber || ""} received for booking ${data.bookingId}`,
+        type: "pcn",
+        link: `/admin/pcn-tickets`,
+        read: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      console.log("[v0] Notification created for new PCN")
+    } catch (notificationError) {
+      console.error("[v0] Failed to create notification for PCN:", notificationError)
+    }
+
     return { success: true, ticket }
   } catch (error) {
     console.error("[v0] createPCNTicketAction error:", error)
@@ -145,6 +164,37 @@ export async function updatePCNTicketStatusAction(ticketId: string, status: stri
     }
 
     const ticket = await db.updatePCNTicket(ticketId, updates)
+
+    // Record Finance Transaction if paid
+    if (status === "paid") {
+      // Fetch full ticket details to get booking/car/customer IDs
+      const { data: ticketDetails } = await (await createClient())
+        .from("pcn_tickets")
+        .select("*")
+        .eq("id", ticketId)
+        .single()
+
+      if (ticketDetails) {
+        await createFinanceTransaction({
+          occurred_at: new Date().toISOString(),
+          direction: "in",
+          type: "pcn_ticket",
+          source: "manual", // PCNs are usually manually reconciled
+          status: "paid",
+          currency: "GBP",
+          amount_gross: ticketDetails.amount,
+          fees: 0,
+          amount_net: ticketDetails.amount,
+          booking_id: ticketDetails.booking_id,
+          agreement_id: ticketDetails.agreement_id,
+          customer_id: ticketDetails.customer_id,
+          vehicle_id: ticketDetails.vehicle_id,
+          method: paidBy === "company" ? "company_payment" : "customer_payment",
+          notes: `PCN Payment recorded. Paid by: ${paidBy || "customer"}. Type: ${ticketDetails.ticket_type}`,
+        })
+      }
+    }
+
     return { success: true, ticket }
   } catch (error) {
     console.error("[v0] updatePCNTicketStatusAction error:", error)

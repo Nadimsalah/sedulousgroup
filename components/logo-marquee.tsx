@@ -53,12 +53,6 @@ export function LogoMarquee() {
             <br />
             We Offer
           </h2>
-          <Button
-            variant="outline"
-            className="mt-4 sm:mt-0 liquid-glass hover:liquid-glass-enhanced text-white border-white/20 bg-transparent"
-          >
-            View All Brands
-          </Button>
         </div>
 
         {/* Logo Marquee */}

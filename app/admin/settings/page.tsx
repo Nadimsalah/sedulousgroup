@@ -11,6 +11,8 @@ import {
   Database,
   AlertCircle,
   Mail,
+  FileText,
+  MapPin,
 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -33,7 +35,7 @@ export default function SettingsPage() {
 
   async function checkTables() {
     setTableStatus({ company_settings: true, settings: true, checking: true })
-    
+
     try {
       const [companyRes, settingsRes] = await Promise.all([
         fetch("/api/check-table?table=company_settings"),
@@ -95,12 +97,12 @@ export default function SettingsPage() {
       requiresTable: "settings",
     },
     {
-      title: "Email Settings",
-      description: "Configure Resend API key and email service settings",
-      icon: Mail,
-      href: "/admin/settings/email",
+      title: "Location Management",
+      description: "Manage pickup and dropoff locations used in the booking process",
+      icon: MapPin,
+      href: "/admin/settings/locations",
       color: "from-green-500 to-green-600",
-      requiresTable: "settings",
+      requiresTable: "settings", // We can use settings as a proxy or just true
     },
   ]
 
@@ -153,37 +155,36 @@ export default function SettingsPage() {
               : tableStatus.settings
 
           return (
-            <Link key={category.href} href={category.href}>
-              <Card
-                className={`liquid-glass border-white/10 p-6 hover:border-white/20 transition-all duration-300 cursor-pointer group h-full ${
-                  !tableExists ? "opacity-60" : ""
+            <Card
+              key={category.href}
+              onClick={() => router.push(category.href)}
+              className={`liquid-glass border-white/10 p-6 hover:border-white/20 transition-all duration-300 cursor-pointer group h-full ${!tableExists ? "opacity-60" : ""
                 }`}
-              >
-                <div className="space-y-4">
-                  <div
-                    className={`w-12 h-12 rounded-lg bg-gradient-to-br ${category.color} flex items-center justify-center shadow-lg`}
-                  >
-                    <category.icon className="h-6 w-6 text-white" />
-                  </div>
-
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-lg font-semibold text-white group-hover:text-red-400 transition-colors">
-                        {category.title}
-                      </h3>
-                      {!tableExists && (
-                        <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded">
-                          Setup Required
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm text-white/60 mt-1 leading-relaxed">
-                      {category.description}
-                    </p>
-                  </div>
+            >
+              <div className="space-y-4">
+                <div
+                  className={`w-12 h-12 rounded-lg bg-gradient-to-br ${category.color} flex items-center justify-center shadow-lg`}
+                >
+                  <category.icon className="h-6 w-6 text-white" />
                 </div>
-              </Card>
-            </Link>
+
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-white group-hover:text-red-400 transition-colors">
+                      {category.title}
+                    </h3>
+                    {!tableExists && (
+                      <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded">
+                        Setup Required
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-white/60 mt-1 leading-relaxed">
+                    {category.description}
+                  </p>
+                </div>
+              </div>
+            </Card>
           )
         })}
       </div>

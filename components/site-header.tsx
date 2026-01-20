@@ -161,15 +161,22 @@ export function SiteHeader() {
   }
 
   const handleRentalTypeClick = (type: string) => {
-    // Dispatch event to change rental type in CarListings
-    window.dispatchEvent(new CustomEvent("rentalTypeChange", { detail: type }))
-    // Scroll to cars section
-    const carsSection = document.getElementById("cars")
-    if (carsSection) {
-      carsSection.scrollIntoView({ behavior: "smooth" })
-    }
     // Close mobile menu if open
     setIsSheetOpen(false)
+
+    // Navigate to home page with rental type parameter
+    router.push(`/?type=${encodeURIComponent(type)}#cars`)
+
+    // If already on home page, dispatch event and scroll
+    if (window.location.pathname === '/') {
+      window.dispatchEvent(new CustomEvent("rentalTypeChange", { detail: type }))
+      setTimeout(() => {
+        const carsSection = document.getElementById("cars")
+        if (carsSection) {
+          carsSection.scrollIntoView({ behavior: "smooth" })
+        }
+      }, 100)
+    }
   }
 
   const links = [
@@ -315,7 +322,7 @@ export function SiteHeader() {
               </SheetTrigger>
               <SheetContent
                 side="right"
-                className="liquid-glass border-gray-800 p-0 w-full flex flex-col overflow-y-auto"
+                className="bg-black/95 border-l border-white/10 p-0 w-[300px] sm:w-[350px] shadow-2xl flex flex-col overflow-y-auto"
               >
                 {/* Brand Header */}
                 <div className="flex items-center justify-between px-6 py-5 border-b border-gray-800 bg-gray-900/50">
@@ -336,10 +343,10 @@ export function SiteHeader() {
                 </div>
 
                 {/* Main Navigation */}
-                <div className="flex-1 overflow-y-auto">
-                  <div className="mt-6 px-6">
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Our Services</h3>
-                    <div className="flex gap-2 pb-2 overflow-x-auto hide-scrollbar">
+                <div className="flex-1 overflow-y-auto py-6">
+                  <div className="px-6 mb-8">
+                    <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-4">Our Services</h3>
+                    <div className="grid grid-cols-2 gap-3">
                       {serviceLinks.map((l) => (
                         <button
                           key={l.label}
@@ -347,16 +354,18 @@ export function SiteHeader() {
                             l.onClick()
                             setIsSheetOpen(false)
                           }}
-                          className="rounded-full px-4 py-2 text-sm cursor-pointer transition-all duration-300 flex-shrink-0 whitespace-nowrap border border-white/10 bg-white/5 text-white/80 backdrop-blur-xl hover:bg-white/10 hover:border-red-500/50 hover:text-red-400 hover:shadow-lg hover:shadow-red-500/20 active:scale-95 flex items-center gap-2"
+                          className="flex flex-col items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-red-500/30 hover:shadow-lg hover:shadow-red-500/10 transition-all duration-300 group active:scale-95"
                         >
-                          <l.icon className="h-3.5 w-3.5" />
-                          <span className="font-medium">{l.label}</span>
+                          <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-red-500/20 group-hover:text-red-400 transition-colors">
+                            <l.icon className="h-4 w-4 text-white/60 group-hover:text-red-400" />
+                          </div>
+                          <span className="text-xs font-medium text-white/80 group-hover:text-white">{l.label}</span>
                         </button>
                       ))}
                     </div>
                   </div>
 
-                  <nav className="flex flex-col gap-2 mt-8 px-6 pb-6">
+                  <nav className="flex flex-col space-y-1 px-4">
                     {mobileLinks.map((l) =>
                       l.onClick ? (
                         <button
@@ -365,96 +374,91 @@ export function SiteHeader() {
                             setIsSheetOpen(false)
                             l.onClick()
                           }}
-                          className="flex items-center gap-4 px-5 py-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-red-500/50 transition-all active:scale-95 text-left w-full"
+                          className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/5 hover:pl-6 transition-all duration-300 group"
                         >
-                          <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
-                            <l.icon className="h-5 w-5 text-red-400" />
-                          </div>
-                          <span className="text-base font-medium text-gray-200">{l.label}</span>
+                          <l.icon className="h-4 w-4 text-white/40 group-hover:text-red-400 transition-colors" />
+                          <span className="text-sm font-medium text-white/60 group-hover:text-white">{l.label}</span>
                         </button>
                       ) : (
                         <Link
                           key={l.href}
                           href={l.href}
                           onClick={() => setIsSheetOpen(false)}
-                          className="flex items-center gap-4 px-5 py-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-red-500/50 transition-all active:scale-95"
+                          className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/5 hover:pl-6 transition-all duration-300 group"
                         >
-                          <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
-                            <l.icon className="h-5 w-5 text-red-400" />
-                          </div>
-                          <span className="text-base font-medium text-gray-200">{l.label}</span>
+                          <l.icon className="h-4 w-4 text-white/40 group-hover:text-red-400 transition-colors" />
+                          <span className="text-sm font-medium text-white/60 group-hover:text-white">{l.label}</span>
                         </Link>
                       ),
                     )}
+                  </nav>
+
+                  <div className="px-6 mt-8">
+                    <div className="h-px w-full bg-white/5 mb-6" />
 
                     {loading ? (
-                      <div className="h-24 animate-pulse rounded-xl bg-white/5 mt-4" />
+                      <div className="h-12 animate-pulse rounded-lg bg-white/5" />
                     ) : user ? (
-                      <div className="mt-4 space-y-2">
-                        <div className="flex items-center gap-3 p-4 bg-white/5 rounded-xl border border-white/10">
-                          <Avatar className="h-12 w-12 border-2 border-red-500/30">
-                            <AvatarFallback className="bg-red-500 text-white font-semibold">
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-3 px-2 mb-4">
+                          <Avatar className="h-10 w-10 border border-white/10">
+                            <AvatarFallback className="bg-red-500/10 text-red-400 font-bold text-xs">
                               {getUserInitials()}
                             </AvatarFallback>
                           </Avatar>
                           <div className="flex-1 min-w-0">
-                            <p className="text-base font-semibold text-white truncate">{getUserDisplayName()}</p>
-                            <p className="text-sm text-gray-400 truncate">{user.email}</p>
+                            <p className="text-sm font-medium text-white truncate">{getUserDisplayName()}</p>
+                            <p className="text-xs text-white/40 truncate">{user.email}</p>
                           </div>
                         </div>
+
                         <Link
                           href="/dashboard"
                           onClick={() => {
                             setIsSheetOpen(false)
                             router.push("/dashboard")
                           }}
-                          className="flex items-center gap-4 px-5 py-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-red-500/50 transition-all active:scale-95"
+                          className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-sm font-medium text-white transition-colors border border-white/5 hover:border-white/10"
                         >
-                          <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
-                            <LayoutDashboard className="h-5 w-5 text-red-400" />
-                          </div>
-                          <span className="text-base font-medium text-gray-200">My Dashboard</span>
+                          <LayoutDashboard className="h-4 w-4" />
+                          Overview
                         </Link>
-                        <Link
-                          href="/dashboard/profile"
-                          onClick={() => {
-                            setIsSheetOpen(false)
-                            router.push("/dashboard/profile")
-                          }}
-                          className="flex items-center gap-4 px-5 py-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-red-500/50 transition-all active:scale-95"
-                        >
-                          <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
-                            <User className="h-5 w-5 text-red-400" />
-                          </div>
-                          <span className="text-base font-medium text-gray-200">Profile Settings</span>
-                        </Link>
-                        <button
-                          onClick={() => {
-                            setIsSheetOpen(false)
-                            handleLogout()
-                          }}
-                          className="flex items-center gap-4 px-5 py-4 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 hover:border-red-500/50 transition-all active:scale-95 w-full text-left"
-                        >
-                          <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
-                            <LogOut className="h-5 w-5 text-red-400" />
-                          </div>
-                          <span className="text-base font-medium text-red-400">Logout</span>
-                        </button>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <Link
+                            href="/dashboard/profile"
+                            onClick={() => {
+                              setIsSheetOpen(false)
+                              router.push("/dashboard/profile")
+                            }}
+                            className="flex items-center justify-center gap-2 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-sm font-medium text-white transition-colors border border-white/5 hover:border-white/10"
+                          >
+                            <User className="h-4 w-4" />
+                            Profile
+                          </Link>
+                          <button
+                            onClick={() => {
+                              setIsSheetOpen(false)
+                              handleLogout()
+                            }}
+                            className="flex items-center justify-center gap-2 py-2.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-sm font-medium text-red-400 transition-colors border border-red-500/20 hover:border-red-500/30"
+                          >
+                            <LogOut className="h-4 w-4" />
+                            Logout
+                          </button>
+                        </div>
                       </div>
                     ) : (
-                      <div className="mt-4 space-y-2">
+                      <div className="space-y-3">
                         <Link
                           href="/login"
                           onClick={() => {
                             setIsSheetOpen(false)
                             router.push("/login")
                           }}
-                          className="flex items-center gap-4 px-5 py-4 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 hover:border-red-500/50 transition-all active:scale-95"
+                          className="flex items-center justify-center w-full py-3 rounded-lg bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-bold text-sm shadow-lg shadow-red-900/20 transition-all active:scale-[0.98]"
                         >
-                          <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
-                            <LogIn className="h-5 w-5 text-red-400" />
-                          </div>
-                          <span className="text-base font-semibold text-red-400">Login</span>
+                          Login to Account
                         </Link>
 
                         <Link
@@ -463,16 +467,13 @@ export function SiteHeader() {
                             setIsSheetOpen(false)
                             router.push("/signup")
                           }}
-                          className="flex items-center gap-4 px-5 py-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-red-500/50 transition-all active:scale-95"
+                          className="flex items-center justify-center w-full py-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white font-medium text-sm transition-all active:scale-[0.98]"
                         >
-                          <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
-                            <UserPlus className="h-5 w-5 text-red-400" />
-                          </div>
-                          <span className="text-base font-medium text-gray-200">Sign up</span>
+                          Create Account
                         </Link>
                       </div>
                     )}
-                  </nav>
+                  </div>
                 </div>
               </SheetContent>
             </Sheet>

@@ -14,6 +14,43 @@ interface Message {
     timestamp: Date
 }
 
+// Simple markdown renderer
+function renderMarkdown(text: string) {
+    let html = text
+
+    // Convert tables
+    const tableRegex = /\|(.+)\|\n\|[-:\s|]+\|\n((?:\|.+\|\n?)+)/g
+    html = html.replace(tableRegex, (match, header, rows) => {
+        const headers = header.split('|').filter((h: string) => h.trim()).map((h: string) => `<th class="px-4 py-2 border border-white/10 text-left">${h.trim()}</th>`).join('')
+        const rowsHtml = rows.trim().split('\n').map((row: string) => {
+            const cells = row.split('|').filter((c: string) => c.trim()).map((c: string) => `<td class="px-4 py-2 border border-white/10">${c.trim()}</td>`).join('')
+            return `<tr>${cells}</tr>`
+        }).join('')
+        return `<table class="w-full my-4 border-collapse border border-white/10"><thead><tr>${headers}</tr></thead><tbody>${rowsHtml}</tbody></table>`
+    })
+
+    // Convert bold (**text** to <strong>)
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-white">$1</strong>')
+
+    // Convert bullet lists
+    html = html.replace(/^- (.+)$/gm, '<li class="ml-4">• $1</li>')
+    html = html.replace(/(<li class="ml-4">.*<\/li>\n?)+/g, '<ul class="my-2 space-y-1">$&</ul>')
+
+    // Convert numbered lists  
+    html = html.replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>')
+
+    // Convert code blocks
+    html = html.replace(/```(\w+)?\n([\s\S]+?)```/g, '<pre class="bg-white/5 p-4 rounded-lg my-2 overflow-x-auto"><code>$2</code></pre>')
+
+    // Convert inline code
+    html = html.replace(/`([^`]+)`/g, '<code class="bg-white/10 px-1.5 py-0.5 rounded text-sm">$1</code>')
+
+    // Convert line breaks
+    html = html.replace(/\n/g, '<br/>')
+
+    return html
+}
+
 export default function AIAssistantPage() {
     const [messages, setMessages] = useState<Message[]>([])
     const [input, setInput] = useState("")
@@ -164,7 +201,7 @@ export default function AIAssistantPage() {
 
             {/* Main Chat Area */}
             <div className="flex-1 overflow-y-auto px-4 md:px-0 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                <div className="max-w-3xl mx-auto py-6 md:py-10 space-y-6">
+                <div className="max-w-3xl mx-auto py-6 md:py-10 space-y-6 pb-40">
 
                     {/* Welcome / Empty State */}
                     {showWelcome && messages.length === 0 && (
@@ -232,9 +269,10 @@ export default function AIAssistantPage() {
                                             {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                         </span>
                                     </div>
-                                    <div className="text-sm md:text-[15px] leading-7 text-white/80 whitespace-pre-wrap font-light tracking-wide">
-                                        {msg.content}
-                                    </div>
+                                    <div
+                                        className="text-sm md:text-[15px] leading-7 text-white/80 font-light tracking-wide"
+                                        dangerouslySetInnerHTML={{ __html: msg.role === "assistant" ? renderMarkdown(msg.content) : msg.content.replace(/\n/g, '<br/>') }}
+                                    />
                                 </div>
 
                                 {msg.role === "assistant" && (

@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { CarStories } from "./car-stories"
 import { getCarsAction } from "@/app/actions/database"
 import type { Car } from "@/lib/database"
+import { getActiveLocations, type Location } from "@/app/actions/locations"
 
 export function SearchResults() {
   const searchParams = useSearchParams()
@@ -34,6 +35,15 @@ export function SearchResults() {
   const [pickupLocation, setPickupLocation] = useState("")
   const [pickupDate, setPickupDate] = useState("")
   const [returnDate, setReturnDate] = useState("")
+  const [locations, setLocations] = useState<Location[]>([])
+
+  useEffect(() => {
+    const fetchLocations = async () => {
+      const data = await getActiveLocations()
+      setLocations(data)
+    }
+    fetchLocations()
+  }, [])
 
   useEffect(() => {
     const loadCars = async () => {
@@ -124,13 +134,22 @@ export function SearchResults() {
                 <MapPin className="inline h-2.5 w-2.5 mr-1" />
                 Pickup Location
               </label>
-              <input
-                type="text"
-                placeholder="City or Airport"
-                value={pickupLocation}
-                onChange={(e) => setPickupLocation(e.target.value)}
-                className="w-full rounded-lg border border-white/30 bg-white/10 backdrop-blur-sm px-3 py-2.5 text-sm text-white placeholder:text-white/50 font-medium focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-400/30 transition-all hover:bg-white/15"
-              />
+              <Select value={pickupLocation} onValueChange={setPickupLocation}>
+                <SelectTrigger className="w-full rounded-lg border border-white/30 bg-white/10 backdrop-blur-sm px-3 py-2.5 h-11 text-sm text-white font-medium focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-400/30 transition-all hover:bg-white/15">
+                  <SelectValue placeholder="Select location" />
+                </SelectTrigger>
+                <SelectContent className="border-white/10 bg-black/99 text-white backdrop-blur-xl">
+                  {locations.length > 0 ? (
+                    locations.map((loc) => (
+                      <SelectItem key={loc.id} value={loc.name}>
+                        {loc.name}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="">All Locations</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Pickup Date */}

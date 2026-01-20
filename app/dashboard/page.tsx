@@ -11,6 +11,7 @@ import Image from "next/image"
 import { getUserDashboardData, type UserDashboardData } from "@/app/actions/user-dashboard"
 import { getUserProfileAction } from "@/app/actions/database"
 import { createClient } from "@/lib/supabase/client"
+import { generateInvoiceAction } from "@/app/actions/invoice"
 
 export default function UserDashboard() {
   const router = useRouter()
@@ -20,9 +21,43 @@ export default function UserDashboard() {
   const [userProfile, setUserProfile] = useState<any>(null)
   const [documentsLoading, setDocumentsLoading] = useState(false)
   const [uploading, setUploading] = useState<string | null>(null)
-  
+  const [generatingInvoice, setGeneratingInvoice] = useState<string | null>(null)
+
   // Refs for file inputs
   const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({})
+
+  const handleViewInvoice = async (e: React.MouseEvent, bookingId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setGeneratingInvoice(bookingId)
+
+    try {
+      const result = await generateInvoiceAction(bookingId)
+      if (result.success && result.pdfBase64) {
+        // Create Blob from base64
+        const byteCharacters = atob(result.pdfBase64.split(',')[1]);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+
+        // Open in new tab
+        window.open(url, '_blank');
+      } else {
+        alert(result.error || "Failed to generate invoice")
+      }
+    } catch (err) {
+      console.error("Invoice generation error:", err)
+      alert("Failed to generate invoice")
+    } finally {
+      setGeneratingInvoice(null)
+    }
+  }
+
+  // ... (keep existing code)
 
   useEffect(() => {
     async function loadData() {
@@ -50,9 +85,9 @@ export default function UserDashboard() {
           status: b.status,
           can_resubmit: b.can_resubmit
         })))
-        
+
         // Log any rejected bookings
-        const rejectedBookings = result.data?.bookings.filter(b => 
+        const rejectedBookings = result.data?.bookings.filter(b =>
           b.status.toLowerCase().includes('reject')
         )
         if (rejectedBookings && rejectedBookings.length > 0) {
@@ -198,7 +233,7 @@ export default function UserDashboard() {
   }
 
   const { user, bookings, agreements, stats } = data
-  
+
   // Ensure stats always have values (default to 0 if undefined)
   const safeStats = {
     totalBookings: stats?.totalBookings ?? 0,
@@ -274,18 +309,18 @@ export default function UserDashboard() {
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* Tabs */}
         <Tabs defaultValue="overview" className="space-y-8">
-          <TabsList className="bg-white/5 border border-white/10 p-1 rounded-full">
-            <TabsTrigger value="overview" className="rounded-full data-[state=active]:bg-white/10">
-              <Package className="w-4 h-4 mr-2" />
+          <TabsList className="bg-black/50 border border-white/10 p-1">
+            <TabsTrigger value="overview" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
               Overview
             </TabsTrigger>
-            <TabsTrigger value="bookings" className="rounded-full data-[state=active]:bg-white/10">
-              <Car className="w-4 h-4 mr-2" />
-              Bookings
+            <TabsTrigger value="bookings" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
+              My Bookings
             </TabsTrigger>
-            <TabsTrigger value="agreements" className="rounded-full data-[state=active]:bg-white/10">
-              <FileText className="w-4 h-4 mr-2" />
-              Agreements
+            <TabsTrigger value="agreements" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
+              My Agreements
+            </TabsTrigger>
+            <TabsTrigger value="invoices" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
+              My Invoices
             </TabsTrigger>
             <TabsTrigger value="documents" className="rounded-full data-[state=active]:bg-white/10">
               <Camera className="w-4 h-4 mr-2" />
@@ -453,39 +488,44 @@ export default function UserDashboard() {
                   // Can resubmit if status is "Documents Rejected" (not permanently "Rejected")
                   // Also check can_resubmit field if it exists
                   const canResubmit = isDocumentsRejected && booking.can_resubmit !== false
-                  
+
                   return (
                     <div key={booking.id} className={`bg-white/5 border rounded-xl overflow-hidden ${isRejected ? (canResubmit ? 'border-orange-500/50' : 'border-red-500/50') : 'border-white/10'}`}>
                       {/* Rejection Alert Banner */}
                       {isRejected && (
-                        <div className={`px-6 py-3 flex items-start gap-3 ${canResubmit ? 'bg-orange-500/10' : 'bg-red-500/10'}`}>
-                          <AlertTriangle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${canResubmit ? 'text-orange-400' : 'text-red-400'}`} />
-                          <div className="flex-1">
-                            <p className={`font-medium text-sm ${canResubmit ? 'text-orange-400' : 'text-red-400'}`}>
-                              {canResubmit ? 'Documents Need Attention - Please Re-upload' : 'Booking Permanently Rejected'}
-                            </p>
-                            <p className="text-gray-400 text-xs mt-1">
-                              {booking.rejection_reason || (canResubmit 
-                                ? 'Some of your documents were not accepted. Please upload clearer copies.' 
-                                : 'Your booking has been rejected and cannot be resubmitted. Please contact support for more information.')}
-                            </p>
-                            {booking.rejection_notes && (
-                              <p className="text-gray-500 text-xs mt-1 italic">
-                                Admin note: {booking.rejection_notes}
+                        <div className={`px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-4 ${canResubmit ? 'bg-orange-500/10 border-b border-orange-500/20' : 'bg-red-500/10 border-b border-red-500/20'}`}>
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            <div className={`p-2 rounded-lg shrink-0 ${canResubmit ? 'bg-orange-500/20' : 'bg-red-500/20'}`}>
+                              <AlertTriangle className={`w-5 h-5 ${canResubmit ? 'text-orange-400' : 'text-red-400'}`} />
+                            </div>
+                            <div className="min-w-0">
+                              <p className={`font-bold text-sm tracking-tight ${canResubmit ? 'text-orange-400' : 'text-red-400'}`}>
+                                {canResubmit ? 'DOCUMENTS NEED ATTENTION' : 'BOOKING PERMANENTLY REJECTED'}
                               </p>
-                            )}
+                              <p className="text-gray-300 text-xs mt-1 leading-relaxed">
+                                {booking.rejection_reason || (canResubmit
+                                  ? 'Some of your documents were not accepted. Please upload clearer copies.'
+                                  : 'Your booking has been rejected and cannot be resubmitted. Please contact support for more information.')}
+                              </p>
+                              {booking.rejection_notes && (
+                                <p className="text-gray-500 text-[11px] mt-1.5 italic flex items-center gap-1.5">
+                                  <span className="w-1 h-1 rounded-full bg-gray-500" />
+                                  Note: {booking.rejection_notes}
+                                </p>
+                              )}
+                            </div>
                           </div>
                           {canResubmit && (
-                            <Link href={`/resubmit-documents/${booking.id}`}>
-                              <Button size="sm" className="bg-orange-500 hover:bg-orange-600 text-white text-xs whitespace-nowrap">
-                                <RotateCcw className="w-3 h-3 mr-1" />
-                                Re-upload Docs
+                            <Link href={`/resubmit-documents/${booking.id}`} className="w-full sm:w-auto">
+                              <Button size="sm" className="w-full bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold h-10 px-6 shadow-lg shadow-orange-600/20">
+                                <RotateCcw className="w-3.5 h-3.5 mr-2" />
+                                Re-upload Documents
                               </Button>
                             </Link>
                           )}
                         </div>
                       )}
-                      
+
                       {/* Booking Card Content */}
                       <Link
                         href={`/my-bookings/${booking.id}`}
@@ -521,7 +561,28 @@ export default function UserDashboard() {
                           <div className="flex flex-col items-end gap-2">
                             <Badge className={getStatusColor(booking.status)}>{booking.status}</Badge>
                             <p className="text-xl font-bold text-white">£{booking.total_amount.toFixed(2)}</p>
-                            <div className="text-xs text-gray-400">Click to view details</div>
+
+                            {/* Invoice Button - Stop propagation to prevent card click */}
+                            {["approved", "paid", "confirmed", "active", "completed"].includes(booking.status.toLowerCase()) && (
+                              <div onClick={(e) => e.preventDefault()}>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs border-white/20 hover:bg-white/10"
+                                  onClick={(e) => handleViewInvoice(e, booking.id)}
+                                  disabled={generatingInvoice === booking.id}
+                                >
+                                  {generatingInvoice === booking.id ? (
+                                    <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                                  ) : (
+                                    <Download className="w-3 h-3 mr-1" />
+                                  )}
+                                  Invoice
+                                </Button>
+                              </div>
+                            )}
+
+                            <div className="text-xs text-gray-400 mt-1">Click to view details</div>
                           </div>
                         </div>
                       </Link>
@@ -576,6 +637,58 @@ export default function UserDashboard() {
                     </div>
                   </Link>
                 ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Invoices Tab */}
+          <TabsContent value="invoices" className="space-y-6">
+            <h2 className="text-2xl font-bold text-white">My Invoices</h2>
+
+            {bookings.filter(b => ["approved", "paid", "confirmed", "active", "completed"].includes(b.status.toLowerCase())).length === 0 ? (
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-12 text-center">
+                <FileText className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                <p className="text-gray-400 text-lg">No invoices available</p>
+                <p className="text-gray-500 text-sm">Invoices will appear here once your bookings are approved</p>
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {bookings
+                  .filter(b => ["approved", "paid", "confirmed", "active", "completed"].includes(b.status.toLowerCase()))
+                  .map((booking) => (
+                    <div
+                      key={`inv-${booking.id}`}
+                      className="bg-white/5 border border-white/10 rounded-xl p-6 hover:bg-white/10 transition-all"
+                    >
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div>
+                          <h3 className="font-semibold text-white text-lg">Invoice #{booking.id.slice(0, 8).toUpperCase()}</h3>
+                          <p className="text-gray-400 text-sm">
+                            {booking.car_brand} {booking.car_name}
+                          </p>
+                          <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                            <span>{new Date(booking.created_at).toLocaleDateString("en-GB")}</span>
+                            <span>•</span>
+                            <span className="text-white font-medium">£{booking.total_amount.toFixed(2)}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Button
+                            onClick={(e) => handleViewInvoice(e, booking.id)}
+                            disabled={generatingInvoice === booking.id}
+                            className="bg-white text-black hover:bg-gray-200"
+                          >
+                            {generatingInvoice === booking.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            ) : (
+                              <Download className="w-4 h-4 mr-2" />
+                            )}
+                            Download Invoice
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
               </div>
             )}
           </TabsContent>
@@ -861,57 +974,57 @@ export default function UserDashboard() {
                         <p className="text-sm text-gray-400">Upload the front of your PCO license (optional)</p>
                       </div>
                     </div>
-                        <div className="flex items-center gap-3">
-                          {userProfile?.privateHireLicenseFrontUrl ? (
-                            <>
-                              <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                                <CheckCircle2 className="w-3 h-3 mr-1" />
-                                Uploaded
-                              </Badge>
-                              <a
-                                href={userProfile.privateHireLicenseFrontUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                              >
-                                <Eye className="w-5 h-5 text-gray-400" />
-                              </a>
-                            </>
-                          ) : (
-                            <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
-                              <XCircle className="w-3 h-3 mr-1" />
-                              Not Uploaded
-                            </Badge>
-                          )}
-                          <input
-                            type="file"
-                            accept="image/*,application/pdf"
-                            className="hidden"
-                            ref={(el) => { fileInputRefs.current["privateHireLicenseFrontUrl"] = el }}
-                            onChange={(e) => {
-                              const file = e.target.files?.[0]
-                              const input = e.target as HTMLInputElement
-                              if (file) handleFileUpload("privateHireLicenseFrontUrl", file, input)
-                            }}
-                            disabled={uploading === "privateHireLicenseFrontUrl"}
-                          />
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="border-white/10 text-gray-300 hover:bg-white/5 bg-transparent"
-                            disabled={uploading === "privateHireLicenseFrontUrl"}
-                            onClick={() => fileInputRefs.current["privateHireLicenseFrontUrl"]?.click()}
+                    <div className="flex items-center gap-3">
+                      {userProfile?.privateHireLicenseFrontUrl ? (
+                        <>
+                          <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                            <CheckCircle2 className="w-3 h-3 mr-1" />
+                            Uploaded
+                          </Badge>
+                          <a
+                            href={userProfile.privateHireLicenseFrontUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
                           >
-                            {uploading === "privateHireLicenseFrontUrl" ? (
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            ) : (
-                              <Upload className="w-4 h-4 mr-2" />
-                            )}
-                            {userProfile?.privateHireLicenseFrontUrl ? "Replace" : "Upload"}
-                          </Button>
-                        </div>
-                      </div>
+                            <Eye className="w-5 h-5 text-gray-400" />
+                          </a>
+                        </>
+                      ) : (
+                        <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
+                          <XCircle className="w-3 h-3 mr-1" />
+                          Not Uploaded
+                        </Badge>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        className="hidden"
+                        ref={(el) => { fileInputRefs.current["privateHireLicenseFrontUrl"] = el }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          const input = e.target as HTMLInputElement
+                          if (file) handleFileUpload("privateHireLicenseFrontUrl", file, input)
+                        }}
+                        disabled={uploading === "privateHireLicenseFrontUrl"}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-white/10 text-gray-300 hover:bg-white/5 bg-transparent"
+                        disabled={uploading === "privateHireLicenseFrontUrl"}
+                        onClick={() => fileInputRefs.current["privateHireLicenseFrontUrl"]?.click()}
+                      >
+                        {uploading === "privateHireLicenseFrontUrl" ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Upload className="w-4 h-4 mr-2" />
+                        )}
+                        {userProfile?.privateHireLicenseFrontUrl ? "Replace" : "Upload"}
+                      </Button>
                     </div>
+                  </div>
+                </div>
 
                 {/* Private Hire License Back */}
                 <div className="bg-white/5 border border-white/10 rounded-xl p-6">
@@ -925,57 +1038,57 @@ export default function UserDashboard() {
                         <p className="text-sm text-gray-400">Upload the back of your PCO license (optional)</p>
                       </div>
                     </div>
-                        <div className="flex items-center gap-3">
-                          {userProfile?.privateHireLicenseBackUrl ? (
-                            <>
-                              <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                                <CheckCircle2 className="w-3 h-3 mr-1" />
-                                Uploaded
-                              </Badge>
-                              <a
-                                href={userProfile.privateHireLicenseBackUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                              >
-                                <Eye className="w-5 h-5 text-gray-400" />
-                              </a>
-                            </>
-                          ) : (
-                            <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
-                              <XCircle className="w-3 h-3 mr-1" />
-                              Not Uploaded
-                            </Badge>
-                          )}
-                          <input
-                            type="file"
-                            accept="image/*,application/pdf"
-                            className="hidden"
-                            ref={(el) => { fileInputRefs.current["privateHireLicenseBackUrl"] = el }}
-                            onChange={(e) => {
-                              const file = e.target.files?.[0]
-                              const input = e.target as HTMLInputElement
-                              if (file) handleFileUpload("privateHireLicenseBackUrl", file, input)
-                            }}
-                            disabled={uploading === "privateHireLicenseBackUrl"}
-                          />
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="border-white/10 text-gray-300 hover:bg-white/5 bg-transparent"
-                            disabled={uploading === "privateHireLicenseBackUrl"}
-                            onClick={() => fileInputRefs.current["privateHireLicenseBackUrl"]?.click()}
+                    <div className="flex items-center gap-3">
+                      {userProfile?.privateHireLicenseBackUrl ? (
+                        <>
+                          <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                            <CheckCircle2 className="w-3 h-3 mr-1" />
+                            Uploaded
+                          </Badge>
+                          <a
+                            href={userProfile.privateHireLicenseBackUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
                           >
-                            {uploading === "privateHireLicenseBackUrl" ? (
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            ) : (
-                              <Upload className="w-4 h-4 mr-2" />
-                            )}
-                            {userProfile?.privateHireLicenseBackUrl ? "Replace" : "Upload"}
-                          </Button>
-                        </div>
-                      </div>
+                            <Eye className="w-5 h-5 text-gray-400" />
+                          </a>
+                        </>
+                      ) : (
+                        <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
+                          <XCircle className="w-3 h-3 mr-1" />
+                          Not Uploaded
+                        </Badge>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        className="hidden"
+                        ref={(el) => { fileInputRefs.current["privateHireLicenseBackUrl"] = el }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          const input = e.target as HTMLInputElement
+                          if (file) handleFileUpload("privateHireLicenseBackUrl", file, input)
+                        }}
+                        disabled={uploading === "privateHireLicenseBackUrl"}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-white/10 text-gray-300 hover:bg-white/5 bg-transparent"
+                        disabled={uploading === "privateHireLicenseBackUrl"}
+                        onClick={() => fileInputRefs.current["privateHireLicenseBackUrl"]?.click()}
+                      >
+                        {uploading === "privateHireLicenseBackUrl" ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Upload className="w-4 h-4 mr-2" />
+                        )}
+                        {userProfile?.privateHireLicenseBackUrl ? "Replace" : "Upload"}
+                      </Button>
                     </div>
+                  </div>
+                </div>
               </div>
             )}
           </TabsContent>

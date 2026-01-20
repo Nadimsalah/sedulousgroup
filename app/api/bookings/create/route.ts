@@ -137,6 +137,22 @@ export async function POST(request: NextRequest) {
 
     console.log("[v0] Booking created successfully:", data.id, "Status:", data.status)
 
+    // Create notification for admin
+    try {
+      await supabase.from("notifications").insert({
+        title: "New Booking Request",
+        message: `New booking ${bookingId} received from ${customerName}`,
+        type: "booking",
+        link: `/admin/requests`,
+        read: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      console.log("[v0] Notification created for new booking")
+    } catch (notificationError) {
+      console.error("[v0] Failed to create notification:", notificationError)
+    }
+
     return NextResponse.json({
       success: true,
       booking: {

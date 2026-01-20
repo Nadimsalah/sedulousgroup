@@ -154,6 +154,7 @@ export default function AgreementStepsPage() {
   const [vehicleRegistration, setVehicleRegistration] = useState("")
 
   const [adminSignature, setAdminSignature] = useState<string>("")
+  const [isSignatureEmpty, setIsSignatureEmpty] = useState(true)
   const [fleetOptions, setFleetOptions] = useState<FleetOption[]>([])
   const [open, setOpen] = useState(false)
 
@@ -1244,11 +1245,16 @@ export default function AgreementStepsPage() {
                     ref={signaturePadRef}
                     canvasProps={{ width: 500, height: 150, className: "border border-gray-300 rounded" }}
                     backgroundColor="#ffffff"
+                    onEnd={() => setIsSignatureEmpty(false)}
                   />
                 </div>
                 <div className="flex gap-2">
                   <Button
-                    onClick={() => signaturePadRef.current?.clear()}
+                    onClick={() => {
+                      signaturePadRef.current?.clear()
+                      setIsSignatureEmpty(true)
+                      setAdminSignature("")
+                    }}
                     variant="outline"
                     className="flex-1 bg-zinc-800 border-zinc-700"
                   >
@@ -1265,7 +1271,7 @@ export default function AgreementStepsPage() {
                       }
                     }}
                     className="flex-1 bg-green-600 hover:bg-green-700"
-                    disabled={!signaturePadRef.current || signaturePadRef.current.isEmpty()}
+                    disabled={isSignatureEmpty}
                   >
                     Confirm Signature
                   </Button>

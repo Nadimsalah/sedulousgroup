@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { CarImageGallery } from "@/components/car-image-gallery"
 import { createClient } from "@/lib/supabase/client"
+import { getBookingConstraints } from "@/app/actions/booking-validation"
 
 export function CarDetail({ carId }: { carId: string }) {
   const router = useRouter()
@@ -37,6 +38,7 @@ export function CarDetail({ carId }: { carId: string }) {
   const [visitRequestSubmitted, setVisitRequestSubmitted] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [validationError, setValidationError] = useState("")
+  const [bookingConstraints, setBookingConstraints] = useState<any>(null)
 
   useEffect(() => {
     const fetchCar = async () => {
@@ -48,6 +50,11 @@ export function CarDetail({ carId }: { carId: string }) {
           const supabase = createClient()
           const { data: images } = await supabase.from("car_images").select("image_url").eq("car_id", carId)
           setCarImages(images?.map((img) => img.image_url) || [])
+
+          // Fetch booking constraints for this rental type
+          const rentalType = (fetchedCar.rentalType || "Rent") as "Rent" | "Flexi Hire" | "PCO Hire"
+          const constraints = await getBookingConstraints(rentalType)
+          setBookingConstraints(constraints)
         }
       } catch (error) {
         console.error("Error fetching car:", error)
@@ -98,6 +105,21 @@ export function CarDetail({ carId }: { carId: string }) {
     if (new Date(pickupDate) >= new Date(returnDate)) {
       setValidationError("Drop-off date must be after pickup date")
       return
+    }
+
+    // Validate against booking constraints
+    if (bookingConstraints) {
+      const days = Math.ceil((new Date(returnDate).getTime() - new Date(pickupDate).getTime()) / (1000 * 60 * 60 * 24))
+
+      if (days < bookingConstraints.minDays) {
+        setValidationError(`Minimum booking duration for ${car.rentalType} is ${bookingConstraints.minDays} day${bookingConstraints.minDays > 1 ? "s" : ""}`)
+        return
+      }
+
+      if (days > bookingConstraints.maxDays) {
+        setValidationError(`Maximum booking duration for ${car.rentalType} is ${bookingConstraints.maxDays} days`)
+        return
+      }
     }
 
     // Proceed directly to checkout for all users
@@ -498,7 +520,15 @@ export function CarDetail({ carId }: { carId: string }) {
                   {isFlexiOrPCO && (
                     <div className="mb-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 p-3">
                       <p className="text-xs text-yellow-200 font-medium">
-                        ⚠️ Minimum rental period: 30 days ({car.rentalType})
+                        ⚠️ Minimum rental period: {bookingConstraints?.minDays || 30} days ({car.rentalType})
+                      </p>
+                    </div>
+                  )}
+
+                  {bookingConstraints && !isFlexiOrPCO && (
+                    <div className="mb-3 rounded-lg bg-blue-500/10 border border-blue-500/20 p-3">
+                      <p className="text-xs text-blue-200 font-medium">
+                        ℹ️ Booking duration: {bookingConstraints.minDays}-{bookingConstraints.maxDays} days
                       </p>
                     </div>
                   )}
@@ -580,8 +610,8 @@ export function CarDetail({ carId }: { carId: string }) {
                           min={
                             isFlexiOrPCO && pickupDate
                               ? new Date(new Date(pickupDate).getTime() + 30 * 24 * 60 * 60 * 1000)
-                                  .toISOString()
-                                  .split("T")[0]
+                                .toISOString()
+                                .split("T")[0]
                               : pickupDate || new Date().toISOString().split("T")[0]
                           }
                           placeholder="29/07/2025"
