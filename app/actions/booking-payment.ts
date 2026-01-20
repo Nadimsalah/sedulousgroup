@@ -24,11 +24,22 @@ export async function createBookingWithPayment(bookingData: {
     try {
         const supabase = await createClient()
 
+        // Generate unique booking ID (matching existing format)
+        const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        let shortCode = ""
+        for (let i = 0; i < 6; i++) {
+            shortCode += chars.charAt(Math.floor(Math.random() * chars.length))
+        }
+        const bookingId = `SED-${shortCode}`
+
         // Create booking with pending payment status
         const { data: booking, error: bookingError } = await supabase
             .from("bookings")
             .insert({
+                id: bookingId,
                 car_id: bookingData.carId,
+                user_id: bookingData.userId,
+                customer_id: bookingData.userId,
                 customer_name: bookingData.customerName,
                 customer_email: bookingData.customerEmail,
                 customer_phone: bookingData.customerPhone,
@@ -41,16 +52,17 @@ export async function createBookingWithPayment(bookingData: {
                 dropoff_time: bookingData.dropoffTime,
                 total_amount: bookingData.totalAmount,
                 booking_type: bookingData.bookingType,
-                customer_id: bookingData.userId,
                 status: "pending",
                 payment_status: "pending",
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
             })
             .select()
             .single()
 
         if (bookingError || !booking) {
             console.error("Error creating booking:", bookingError)
-            throw new Error("Failed to create booking")
+            throw new Error(bookingError?.message || "Failed to create booking")
         }
 
         // Create Stripe checkout session with booking ID
