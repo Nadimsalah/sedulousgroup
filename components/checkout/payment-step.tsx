@@ -83,7 +83,19 @@ export function PaymentStep({
             <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-6 min-h-[400px]">
                 <EmbeddedCheckoutProvider
                     stripe={stripePromise}
-                    options={{ clientSecret }}
+                    options={{
+                        clientSecret,
+                        appearance: {
+                            theme: 'night',
+                            variables: {
+                                colorPrimary: '#ef4444',
+                                colorBackground: '#18181b', // Zinc-900 matching card bg
+                                colorText: '#ffffff',
+                                fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+                                borderRadius: '12px'
+                            }
+                        }
+                    } as any}
                 >
                     <EmbeddedCheckout />
                 </EmbeddedCheckoutProvider>
