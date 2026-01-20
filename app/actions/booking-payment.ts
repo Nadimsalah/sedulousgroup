@@ -39,7 +39,6 @@ export async function createBookingWithPayment(bookingData: {
                 id: bookingId,
                 car_id: bookingData.carId,
                 user_id: bookingData.userId,
-                customer_id: bookingData.userId,
                 customer_name: bookingData.customerName,
                 customer_email: bookingData.customerEmail,
                 customer_phone: bookingData.customerPhone,
