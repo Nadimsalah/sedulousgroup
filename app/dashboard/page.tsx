@@ -313,39 +313,41 @@ export default function UserDashboard() {
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* Tabs */}
         <Tabs defaultValue="overview" className="space-y-8">
-          <TabsList className="liquid-glass p-1.5 gap-2">
-            <TabsTrigger
-              value="overview"
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-600 data-[state=active]:to-red-500 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-500/30 transition-all"
-            >
-              Overview
-            </TabsTrigger>
-            <TabsTrigger
-              value="bookings"
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-600 data-[state=active]:to-red-500 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-500/30 transition-all"
-            >
-              My Bookings
-            </TabsTrigger>
-            <TabsTrigger
-              value="agreements"
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-600 data-[state=active]:to-red-500 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-500/30 transition-all"
-            >
-              My Agreements
-            </TabsTrigger>
-            <TabsTrigger
-              value="invoices"
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-600 data-[state=active]:to-red-500 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-500/30 transition-all"
-            >
-              My Invoices
-            </TabsTrigger>
-            <TabsTrigger
-              value="documents"
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-600 data-[state=active]:to-red-500 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-500/30 transition-all"
-            >
-              <Camera className="w-4 h-4 mr-2" />
-              Documents
-            </TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto scrollbar-hide -mx-4 px-4 pb-2">
+            <TabsList className="liquid-glass p-1.5 gap-2 inline-flex w-auto">
+              <TabsTrigger
+                value="overview"
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-600 data-[state=active]:to-red-500 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-500/30 transition-all"
+              >
+                Overview
+              </TabsTrigger>
+              <TabsTrigger
+                value="bookings"
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-600 data-[state=active]:to-red-500 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-500/30 transition-all"
+              >
+                My Bookings
+              </TabsTrigger>
+              <TabsTrigger
+                value="agreements"
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-600 data-[state=active]:to-red-500 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-500/30 transition-all"
+              >
+                My Agreements
+              </TabsTrigger>
+              <TabsTrigger
+                value="invoices"
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-600 data-[state=active]:to-red-500 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-500/30 transition-all"
+              >
+                My Invoices
+              </TabsTrigger>
+              <TabsTrigger
+                value="documents"
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-600 data-[state=active]:to-red-500 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-500/30 transition-all"
+              >
+                <Camera className="w-4 h-4 mr-2" />
+                Documents
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-8">
