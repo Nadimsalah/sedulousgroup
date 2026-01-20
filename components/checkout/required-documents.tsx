@@ -2,8 +2,8 @@
 
 import type React from "react"
 import { useState, useEffect, useRef } from "react"
-import { 
-  Upload, CheckCircle2, AlertCircle, X, FileText, 
+import {
+  Upload, CheckCircle2, AlertCircle, X, FileText,
   Camera, CreditCard, Home, Calendar, Loader2, Eye
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -21,8 +21,10 @@ const BOOKING_REQUIREMENTS = {
     documents: [
       { id: "licenseFront", label: "Driving Licence (Front)", required: true, icon: CreditCard },
       { id: "licenseBack", label: "Driving Licence (Back)", required: true, icon: CreditCard },
-      { id: "proofOfAddress", label: "Proof of Address", required: true, icon: Home, 
-        helperText: "Bank statement OR official letter, issued within 3 months", needsIssueDate: true },
+      {
+        id: "proofOfAddress", label: "Proof of Address", required: true, icon: Home,
+        helperText: "Bank statement OR official letter, issued within 3 months", needsIssueDate: true
+      },
     ],
     needsNI: true,
     needsBankStatement: false,
@@ -34,11 +36,15 @@ const BOOKING_REQUIREMENTS = {
     documents: [
       { id: "licenseFront", label: "Driving Licence (Front)", required: true, icon: CreditCard },
       { id: "licenseBack", label: "Driving Licence (Back)", required: true, icon: CreditCard },
-      { id: "bankStatement", label: "Bank Statement (Proof of Affordability)", required: true, icon: FileText,
-        helperText: "Bank statement issued within the last 3 months", needsIssueDate: true },
-      { id: "proofOfAddress", label: "Proof of Address (NOT Bank Statement)", required: true, icon: Home,
-        helperText: "Utility bill, council tax, government letter, tenancy agreement - issued within 3 months", 
-        needsIssueDate: true, needsDocType: true },
+      {
+        id: "bankStatement", label: "Bank Statement (Proof of Affordability)", required: true, icon: FileText,
+        helperText: "Bank statement issued within the last 3 months", needsIssueDate: true
+      },
+      {
+        id: "proofOfAddress", label: "Proof of Address (NOT Bank Statement)", required: true, icon: Home,
+        helperText: "Utility bill, council tax, government letter, tenancy agreement - issued within 3 months",
+        needsIssueDate: true, needsDocType: true
+      },
     ],
     needsNI: true,
     needsBankStatement: true,
@@ -52,11 +58,15 @@ const BOOKING_REQUIREMENTS = {
       { id: "licenseBack", label: "Driving Licence (Back)", required: true, icon: CreditCard },
       { id: "privateHireLicenseFront", label: "Private Hire Licence (Front)", required: true, icon: Camera },
       { id: "privateHireLicenseBack", label: "Private Hire Licence (Back)", required: true, icon: Camera },
-      { id: "bankStatement", label: "Bank Statement (Proof of Affordability)", required: true, icon: FileText,
-        helperText: "Bank statement issued within the last 3 months", needsIssueDate: true },
-      { id: "proofOfAddress", label: "Proof of Address (NOT Bank Statement)", required: true, icon: Home,
+      {
+        id: "bankStatement", label: "Bank Statement (Proof of Affordability)", required: true, icon: FileText,
+        helperText: "Bank statement issued within the last 3 months", needsIssueDate: true
+      },
+      {
+        id: "proofOfAddress", label: "Proof of Address (NOT Bank Statement)", required: true, icon: Home,
         helperText: "Utility bill, council tax, government letter, tenancy agreement - issued within 3 months",
-        needsIssueDate: true, needsDocType: true },
+        needsIssueDate: true, needsDocType: true
+      },
     ],
     needsNI: true,
     needsBankStatement: true,
@@ -91,6 +101,7 @@ interface RequiredDocumentsProps {
 
 export interface DocumentData {
   niNumber: string
+  drivingLicenseNumber: string
   documents: {
     licenseFront: { url: string }
     licenseBack: { url: string }
@@ -110,16 +121,17 @@ const createEmptyDocState = (): DocumentUploadState => ({
   docType: "",
 })
 
-export function RequiredDocuments({ 
-  bookingType, 
-  bookingDate, 
+export function RequiredDocuments({
+  bookingType,
+  bookingDate,
   onComplete,
   savedDocuments = {}
 }: RequiredDocumentsProps) {
   const requirements = BOOKING_REQUIREMENTS[bookingType] || BOOKING_REQUIREMENTS.Rent
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
-  
+
   const [niNumber, setNiNumber] = useState("")
+  const [drivingLicenseNumber, setDrivingLicenseNumber] = useState("")
   const [documents, setDocuments] = useState<Record<string, DocumentUploadState>>(() => {
     // Initialize state immediately
     const initial: Record<string, DocumentUploadState> = {}
@@ -147,16 +159,21 @@ export function RequiredDocuments({
 
   const isWithin3Months = (issueDate: string, bookingDateStr: string): boolean => {
     if (!issueDate || !bookingDateStr) return false
-    
+
     const issue = new Date(issueDate)
     const booking = new Date(bookingDateStr)
     const threeMonthsAgo = new Date(booking)
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
-    
+
     return issue >= threeMonthsAgo && issue <= booking
   }
 
   const validateCompletion = (): boolean => {
+    // Check Driving License Number
+    if (!drivingLicenseNumber.trim()) {
+      return false
+    }
+
     // Check NI number
     if (requirements.needsNI && !niNumber.trim()) {
       return false
@@ -165,7 +182,7 @@ export function RequiredDocuments({
     // Check all required documents
     for (const doc of requirements.documents) {
       if (!doc.required) continue
-      
+
       const docState = documents[doc.id]
       if (!docState?.url) return false
 
@@ -197,10 +214,11 @@ export function RequiredDocuments({
   const getDocumentData = (): DocumentData => {
     const data: DocumentData = {
       niNumber,
+      drivingLicenseNumber,
       documents: {
         licenseFront: { url: documents.licenseFront?.url || "" },
         licenseBack: { url: documents.licenseBack?.url || "" },
-        proofOfAddress: { 
+        proofOfAddress: {
           url: documents.proofOfAddress?.url || "",
           issueDate: documents.proofOfAddress?.issueDate,
           docType: documents.proofOfAddress?.docType,
@@ -209,7 +227,7 @@ export function RequiredDocuments({
     }
 
     if (requirements.needsBankStatement) {
-      data.documents.bankStatement = { 
+      data.documents.bankStatement = {
         url: documents.bankStatement?.url || "",
         issueDate: documents.bankStatement?.issueDate,
       }
@@ -227,7 +245,7 @@ export function RequiredDocuments({
   useEffect(() => {
     const isComplete = validateCompletion()
     onComplete(isComplete, getDocumentData())
-  }, [niNumber, documents, bookingDate, bookingType])
+  }, [niNumber, drivingLicenseNumber, documents, bookingDate, bookingType])
 
   const handleUploadClick = (docId: string) => {
     const input = fileInputRefs.current[docId]
@@ -250,9 +268,9 @@ export function RequiredDocuments({
     if (file.size > maxSize) {
       setDocuments((prev) => ({
         ...prev,
-        [docId]: { 
-          ...(prev[docId] || createEmptyDocState()), 
-          error: "File size exceeds 10MB limit" 
+        [docId]: {
+          ...(prev[docId] || createEmptyDocState()),
+          error: "File size exceeds 10MB limit"
         },
       }))
       return
@@ -262,13 +280,13 @@ export function RequiredDocuments({
     const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"]
     const fileExtension = file.name.toLowerCase().split('.').pop() || ""
     const allowedExtensions = ["jpg", "jpeg", "png", "webp", "heic", "heif", "pdf"]
-    
+
     if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
       setDocuments((prev) => ({
         ...prev,
-        [docId]: { 
-          ...(prev[docId] || createEmptyDocState()), 
-          error: "Invalid file type. Please upload JPEG, PNG, WEBP, HEIC, or PDF." 
+        [docId]: {
+          ...(prev[docId] || createEmptyDocState()),
+          error: "Invalid file type. Please upload JPEG, PNG, WEBP, HEIC, or PDF."
         },
       }))
       return
@@ -277,17 +295,17 @@ export function RequiredDocuments({
     // Start upload
     setDocuments((prev) => ({
       ...prev,
-      [docId]: { 
-        ...(prev[docId] || createEmptyDocState()), 
-        file, 
-        uploading: true, 
-        error: null 
+      [docId]: {
+        ...(prev[docId] || createEmptyDocState()),
+        file,
+        uploading: true,
+        error: null
       },
     }))
 
     try {
       console.log("[Documents] Starting upload for:", docId)
-      
+
       const formData = new FormData()
       formData.append("file", file)
 
@@ -309,23 +327,23 @@ export function RequiredDocuments({
 
       setDocuments((prev) => ({
         ...prev,
-        [docId]: { 
-          ...(prev[docId] || createEmptyDocState()), 
+        [docId]: {
+          ...(prev[docId] || createEmptyDocState()),
           file,
-          url: data.url, 
+          url: data.url,
           uploading: false,
           error: null,
         },
       }))
-      
+
       console.log("[Documents] Upload successful:", docId, data.url)
     } catch (error) {
       console.error("[Documents] Upload error:", error)
       setDocuments((prev) => ({
         ...prev,
-        [docId]: { 
-          ...(prev[docId] || createEmptyDocState()), 
-          uploading: false, 
+        [docId]: {
+          ...(prev[docId] || createEmptyDocState()),
+          uploading: false,
           error: error instanceof Error ? error.message : "Upload failed. Please try again.",
         },
       }))
@@ -377,11 +395,10 @@ export function RequiredDocuments({
             <FileText className="h-5 w-5 text-red-500" />
             Required Documents
           </CardTitle>
-          <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-            completedCount === totalRequired 
-              ? "bg-green-500/20 text-green-400" 
-              : "bg-yellow-500/20 text-yellow-400"
-          }`}>
+          <div className={`px-3 py-1 rounded-full text-sm font-medium ${completedCount === totalRequired
+            ? "bg-green-500/20 text-green-400"
+            : "bg-yellow-500/20 text-yellow-400"
+            }`}>
             {completedCount}/{totalRequired} Complete
           </div>
         </div>
@@ -406,11 +423,31 @@ export function RequiredDocuments({
               <li>Bank statement (proof of affordability - max 3 months old)</li>
             )}
             <li>
-              {bookingType === "Rent" 
+              {bookingType === "Rent"
                 ? "Proof of address (bank statement or official letter - max 3 months old)"
                 : "Proof of address - NOT bank statement (max 3 months old)"}
             </li>
           </ul>
+        </div>
+
+        {/* Driving License Number Input */}
+        <div>
+          <Label htmlFor="drivingLicenseNumber" className="text-gray-300 flex items-center gap-2">
+            Driving Licence Number *
+            {drivingLicenseNumber.trim() && (
+              <CheckCircle2 className="h-4 w-4 text-green-400" />
+            )}
+          </Label>
+          <Input
+            id="drivingLicenseNumber"
+            value={drivingLicenseNumber}
+            onChange={(e) => setDrivingLicenseNumber(e.target.value.toUpperCase())}
+            className="mt-2 border-zinc-700 bg-zinc-800 text-white placeholder:text-gray-500 uppercase"
+            placeholder="ABCD 123456 EF"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Format: Enter your 16-character driving licence number
+          </p>
         </div>
 
         {/* NI Number Input */}
@@ -437,7 +474,7 @@ export function RequiredDocuments({
         {requirements.documents.map((doc) => {
           const docState = documents[doc.id] || createEmptyDocState()
           const Icon = doc.icon
-          const isValid = docState.url && 
+          const isValid = docState.url &&
             (!(doc as any).needsIssueDate || (docState.issueDate && isWithin3Months(docState.issueDate, bookingDate))) &&
             (!(doc as any).needsDocType || (docState.docType && !(docState.docType === "bank_statement" && bookingType !== "Rent")))
 
@@ -448,7 +485,7 @@ export function RequiredDocuments({
                 {doc.label} {doc.required && "*"}
                 {isValid && <CheckCircle2 className="h-4 w-4 text-green-400" />}
               </Label>
-              
+
               {(doc as any).helperText && (
                 <p className="text-xs text-gray-500">
                   {(doc as any).helperText}
@@ -466,18 +503,17 @@ export function RequiredDocuments({
                     className="hidden"
                     disabled={docState.uploading}
                   />
-                  
+
                   {/* Clickable upload button */}
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => handleUploadClick(doc.id)}
                     disabled={docState.uploading}
-                    className={`w-full h-auto py-6 flex flex-col items-center justify-center gap-2 border-2 border-dashed transition-all ${
-                      docState.uploading 
-                        ? "border-red-500/50 bg-zinc-800/50 cursor-wait" 
-                        : "border-zinc-600 bg-zinc-800 hover:border-red-500 hover:bg-zinc-700/50"
-                    }`}
+                    className={`w-full h-auto py-6 flex flex-col items-center justify-center gap-2 border-2 border-dashed transition-all ${docState.uploading
+                      ? "border-red-500/50 bg-zinc-800/50 cursor-wait"
+                      : "border-zinc-600 bg-zinc-800 hover:border-red-500 hover:bg-zinc-700/50"
+                      }`}
                   >
                     {docState.uploading ? (
                       <>
@@ -496,7 +532,7 @@ export function RequiredDocuments({
               ) : (
                 <div className="flex items-center gap-3 p-3 bg-zinc-800 rounded-lg border border-green-500/30">
                   {docState.file?.type?.startsWith("image/") || docState.url.match(/\.(jpg|jpeg|png|webp|heic|heif)$/i) ? (
-                    <div 
+                    <div
                       className="relative w-16 h-16 rounded overflow-hidden cursor-pointer flex-shrink-0"
                       onClick={() => setPreviewImage(docState.url)}
                     >
@@ -572,8 +608,8 @@ export function RequiredDocuments({
                     </SelectTrigger>
                     <SelectContent className="bg-zinc-800 border-zinc-700">
                       {PROOF_OF_ADDRESS_TYPES.map((type) => (
-                        <SelectItem 
-                          key={type.value} 
+                        <SelectItem
+                          key={type.value}
                           value={type.value}
                           disabled={type.value === "bank_statement" && bookingType !== "Rent"}
                           className="text-white"
@@ -608,7 +644,7 @@ export function RequiredDocuments({
 
       {/* Image Preview Modal */}
       {previewImage && (
-        <div 
+        <div
           className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center p-4 cursor-pointer"
           onClick={() => setPreviewImage(null)}
         >

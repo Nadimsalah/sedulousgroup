@@ -23,7 +23,7 @@ export async function createBookingWithPayment(bookingData: {
     customerName: string
     customerEmail: string
     customerPhone: string
-    drivingLicenseNumber: string
+    drivingLicenseNumber?: string // Made optional
     pickupLocation: string
     dropoffLocation: string
     pickupDate: string
@@ -56,7 +56,7 @@ export async function createBookingWithPayment(bookingData: {
                 customer_name: bookingData.customerName,
                 customer_email: bookingData.customerEmail,
                 customer_phone: bookingData.customerPhone,
-                driving_license_number: bookingData.drivingLicenseNumber,
+                driving_license_number: bookingData.drivingLicenseNumber || null,
                 pickup_location: bookingData.pickupLocation,
                 dropoff_location: bookingData.dropoffLocation,
                 pickup_date: bookingData.pickupDate,
@@ -113,6 +113,7 @@ export async function createBookingWithPayment(bookingData: {
 }
 
 export async function updateBookingDocuments(bookingId: string, documentData: {
+    drivingLicenseNumber: string // Required here now
     niNumber: string
     drivingLicenseFrontUrl: string
     drivingLicenseBackUrl: string
@@ -127,6 +128,7 @@ export async function updateBookingDocuments(bookingId: string, documentData: {
         const { data, error } = await supabase
             .from("bookings")
             .update({
+                driving_license_number: documentData.drivingLicenseNumber,
                 ni_number: documentData.niNumber,
                 driving_license_front_url: documentData.drivingLicenseFrontUrl,
                 driving_license_back_url: documentData.drivingLicenseBackUrl,

@@ -130,7 +130,7 @@ export default function CheckoutPage() {
 
         // Get booking constraints for this rental type
         if (foundCar) {
-          const rentalType = (foundCar.rentalType || foundCar.rental_type || "Rent") as "Rent" | "Flexi Hire" | "PCO Hire"
+          const rentalType = (foundCar.rentalType || (foundCar as any).rental_type || "Rent") as "Rent" | "Flexi Hire" | "PCO Hire"
           const constraints = await getBookingConstraints(rentalType)
           setBookingConstraints(constraints)
 
@@ -167,7 +167,7 @@ export default function CheckoutPage() {
 
   const rentalDays = calculateRentalDays()
   const totalAmount = car ? car.pricePerDay * rentalDays : 0
-  const bookingType = (car?.rentalType || car?.rental_type || "Rent") as "Rent" | "Flexi Hire" | "PCO Hire"
+  const bookingType = (car?.rentalType || (car as any)?.rental_type || "Rent") as "Rent" | "Flexi Hire" | "PCO Hire"
 
   const validatePersonalInfo = async () => {
     if (!formData.firstName || !formData.lastName) {
@@ -182,10 +182,7 @@ export default function CheckoutPage() {
       setError("Please enter your phone number")
       return false
     }
-    if (!formData.drivingLicense) {
-      setError("Please enter your driving license number")
-      return false
-    }
+    // Driving license check moved to Step 3 (Documents)
     if (!tripDetails.pickupDate || !tripDetails.dropoffDate) {
       setError("Please select pickup and dropoff dates")
       return false
@@ -217,7 +214,7 @@ export default function CheckoutPage() {
         customerName: `${formData.firstName} ${formData.lastName}`,
         customerEmail: formData.email,
         customerPhone: formData.phone,
-        drivingLicenseNumber: formData.drivingLicense,
+        // drivingLicenseNumber: formData.drivingLicense, // Moved to step 3
         pickupLocation: tripDetails.pickupLocation,
         dropoffLocation: tripDetails.dropoffLocation,
         pickupDate: tripDetails.pickupDate,
@@ -304,6 +301,7 @@ export default function CheckoutPage() {
 
     try {
       const result = await updateBookingDocuments(bookingId, {
+        drivingLicenseNumber: documentData.drivingLicenseNumber,
         niNumber: documentData.niNumber,
         drivingLicenseFrontUrl: documentData.documents.licenseFront.url,
         drivingLicenseBackUrl: documentData.documents.licenseBack.url,
@@ -475,20 +473,7 @@ export default function CheckoutPage() {
                     />
                   </div>
 
-                  <div>
-                    <Label htmlFor="drivingLicense" className="text-gray-300">
-                      <IdCard className="mr-2 inline h-4 w-4" />
-                      Driving License Number *
-                    </Label>
-                    <Input
-                      id="drivingLicense"
-                      value={formData.drivingLicense}
-                      onChange={(e) => setFormData({ ...formData, drivingLicense: e.target.value })}
-                      className="mt-2 border-zinc-700 bg-zinc-800 text-white placeholder:text-gray-500"
-                      placeholder="Enter your driving license number"
-                      required
-                    />
-                  </div>
+                  {/* Driving License input moved to Document Upload step */}
                 </div>
 
                 {/* Trip Details Summary */}
