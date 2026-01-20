@@ -13,6 +13,8 @@ import { createClient } from "@/lib/supabase/client"
 import { RequiredDocuments, type DocumentData } from "@/components/checkout/required-documents"
 import { validateBookingDuration, getBookingConstraints } from "@/app/actions/booking-validation"
 import { getActiveLocations } from "@/app/actions/locations"
+import { PaymentStep } from "@/components/checkout/payment-step"
+import { createBookingWithPayment, updateBookingDocuments, checkPaymentStatus } from "@/app/actions/booking-payment"
 
 interface Car {
   id: string
@@ -37,7 +39,10 @@ export default function CheckoutPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
-  const [currentStep, setCurrentStep] = useState(1) // 1: Personal Info, 2: Documents, 3: Confirm
+  const [currentStep, setCurrentStep] = useState(1) // 1: Personal Info, 2: Payment, 3: Documents, 4: Confirm
+  const [stripeClientSecret, setStripeClientSecret] = useState<string | null>(null)
+  const [bookingId, setBookingId] = useState<string | null>(null)
+  const [paymentComplete, setPaymentComplete] = useState(false)
   const [bookingConstraints, setBookingConstraints] = useState<any>(null)
 
   // Trip details from URL params
@@ -197,10 +202,71 @@ export default function CheckoutPage() {
     return true
   }
 
-  const handleContinueToDocuments = async () => {
-    if (await validatePersonalInfo()) {
-      setCurrentStep(2)
+  const handleContinueToPayment = async () => {
+    if (!(await validatePersonalInfo())) {
+      return
     }
+
+    setIsCreatingBooking(true)
+    setError(null)
+
+    try {
+      const result = await createBookingWithPayment({
+        carId: car!.id,
+        carName: car!.name,
+        customerName: `${formData.firstName} ${formData.lastName}`,
+        customerEmail: formData.email,
+        customerPhone: formData.phone,
+        drivingLicenseNumber: formData.drivingLicense,
+        pickupLocation: tripDetails.pickupLocation,
+        dropoffLocation: tripDetails.dropoffLocation,
+        pickupDate: tripDetails.pickupDate,
+        dropoffDate: tripDetails.dropoffDate,
+        pickupTime: tripDetails.pickupTime,
+        dropoffTime: tripDetails.dropoffTime,
+        totalAmount: totalAmount,
+        bookingType: bookingType,
+        userId: user?.id || null,
+        rentalDays: rentalDays,
+      })
+
+      setBookingId(result.bookingId)
+      setStripeClientSecret(result.clientSecret)
+      setCurrentStep(2)
+    } catch (err) {
+      console.error("Error creating booking:", err)
+      setError(err instanceof Error ? err.message : "Failed to create booking")
+    } finally {
+      setIsCreatingBooking(false)
+    }
+  }
+
+  const handlePaymentSuccess = async () => {
+    setPaymentComplete(true)
+    if (bookingId) {
+      try {
+        const status = await checkPaymentStatus(bookingId)
+        if (status.paymentStatus === "paid") {
+          setCurrentStep(3)
+        }
+      } catch (err) {
+        console.error("Error checking payment status:", err)
+        setCurrentStep(3)
+      }
+    }
+  }
+
+  const handlePaymentError = (error: string) => {
+    setError(`Payment failed: ${error}`)
+    setIsCreatingBooking(false)
+  }
+
+  const handleContinueToDocuments = () => {
+    if (!paymentComplete) {
+      setError("Please complete payment first")
+      return
+    }
+    setCurrentStep(3)
   }
 
   const handleContinueToConfirm = () => {
@@ -209,7 +275,7 @@ export default function CheckoutPage() {
       return
     }
     setError(null)
-    setCurrentStep(3)
+    setCurrentStep(4)
   }
 
   const handleDocumentComplete = (isComplete: boolean, data: DocumentData) => {
@@ -218,10 +284,18 @@ export default function CheckoutPage() {
   }
 
   const handleSubmitBooking = async () => {
-    if (!car || !documentData) return
+    if (!bookingId || !documentData) {
+      setError("Missing booking or document data")
+      return
+    }
 
     if (!documentsComplete) {
       setError("Please complete all required document uploads")
+      return
+    }
+
+    if (!paymentComplete) {
+      setError("Payment must be completed before submitting")
       return
     }
 
@@ -229,48 +303,24 @@ export default function CheckoutPage() {
     setError(null)
 
     try {
-      // Call API to create booking with documents
-      const response = await fetch("/api/bookings/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          carId: car.id,
-          customerName: `${formData.firstName} ${formData.lastName}`,
-          customerEmail: formData.email,
-          customerPhone: formData.phone,
-          drivingLicenseNumber: formData.drivingLicense,
-          pickupLocation: tripDetails.pickupLocation,
-          dropoffLocation: tripDetails.dropoffLocation,
-          pickupDate: tripDetails.pickupDate,
-          dropoffDate: tripDetails.dropoffDate,
-          pickupTime: tripDetails.pickupTime,
-          dropoffTime: tripDetails.dropoffTime,
-          totalAmount: totalAmount,
-          bookingType: bookingType,
-          userId: user?.id || null,
-          // Document data
-          niNumber: documentData.niNumber,
-          drivingLicenseFrontUrl: documentData.documents.licenseFront.url,
-          drivingLicenseBackUrl: documentData.documents.licenseBack.url,
-          proofOfAddressUrl: documentData.documents.proofOfAddress.url,
-          bankStatementUrl: documentData.documents.bankStatement?.url || null,
-          privateHireLicenseFrontUrl: documentData.documents.privateHireLicenseFront?.url || null,
-          privateHireLicenseBackUrl: documentData.documents.privateHireLicenseBack?.url || null,
-          status: "Documents Submitted", // Set initial status
-        }),
+      const result = await updateBookingDocuments(bookingId, {
+        niNumber: documentData.niNumber,
+        drivingLicenseFrontUrl: documentData.documents.licenseFront.url,
+        drivingLicenseBackUrl: documentData.documents.licenseBack.url,
+        proofOfAddressUrl: documentData.documents.proofOfAddress.url,
+        bankStatementUrl: documentData.documents.bankStatement?.url || null,
+        privateHireLicenseFrontUrl: documentData.documents.privateHireLicenseFront?.url || null,
+        privateHireLicenseBackUrl: documentData.documents.privateHireLicenseBack?.url || null,
       })
 
-      const result = await response.json()
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || "Failed to create booking")
+      if (!result.success) {
+        throw new Error("Failed to update booking with documents")
       }
 
-      // Redirect to confirmation page
-      router.push(`/confirmation?bookingId=${result.booking.id}`)
+      router.push(`/confirmation?bookingId=${bookingId}`)
     } catch (err) {
-      console.error("[v0] Error creating booking:", err)
-      setError(err instanceof Error ? err.message : "Failed to create booking")
+      console.error("Error updating booking:", err)
+      setError(err instanceof Error ? err.message : "Failed to update booking")
       setIsCreatingBooking(false)
     }
   }
@@ -486,16 +536,37 @@ export default function CheckoutPage() {
                 </div>
 
                 <Button
-                  onClick={handleContinueToDocuments}
+                  onClick={handleContinueToPayment}
+                  disabled={isCreatingBooking}
                   className="mt-6 w-full rounded-xl bg-red-500 py-6 text-lg font-semibold text-white shadow-lg shadow-red-500/30 transition-all duration-300 hover:bg-red-600"
                 >
-                  Continue to Documents
+                  {isCreatingBooking ? "Processing..." : "Continue to Payment"}
                 </Button>
               </Card>
             )}
 
-            {/* Step 2: Document Upload */}
-            {currentStep === 2 && (
+            {/* Step 2: Payment */}
+            {currentStep === 2 && stripeClientSecret && car && (
+              <div className="space-y-6">
+                <Card className="border border-zinc-800 bg-zinc-900 p-6">
+                  <h2 className="text-2xl font-bold text-white mb-2">Payment</h2>
+                  <p className="text-gray-400">
+                    Complete your payment to proceed with document upload
+                  </p>
+                </Card>
+
+                <PaymentStep
+                  clientSecret={stripeClientSecret}
+                  onPaymentSuccess={handlePaymentSuccess}
+                  onPaymentError={handlePaymentError}
+                  totalAmount={totalAmount}
+                  carName={car.name}
+                />
+              </div>
+            )}
+
+            {/* Step 3: Document Upload */}
+            {currentStep === 3 && (
               <>
                 <RequiredDocuments
                   bookingType={bookingType}
@@ -522,8 +593,8 @@ export default function CheckoutPage() {
               </>
             )}
 
-            {/* Step 3: Confirmation */}
-            {currentStep === 3 && (
+            {/* Step 4: Confirmation */}
+            {currentStep === 4 && (
               <Card className="border border-zinc-800 bg-zinc-900 p-6">
                 <h2 className="mb-6 flex items-center gap-2 text-xl font-bold text-white">
                   <CheckCircle2 className="h-5 w-5 text-green-500" />
