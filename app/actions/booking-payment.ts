@@ -1,7 +1,21 @@
 "use server"
 
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@supabase/supabase-js"
 import { createCheckoutSession } from "./stripe"
+
+// Create admin client to bypass RLS policies
+function createAdminClient() {
+    return createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        {
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false
+            }
+        }
+    )
+}
 
 export async function createBookingWithPayment(bookingData: {
     carId: string
@@ -22,7 +36,7 @@ export async function createBookingWithPayment(bookingData: {
     rentalDays: number
 }) {
     try {
-        const supabase = await createClient()
+        const supabase = createAdminClient()
 
         // Generate unique booking ID (matching existing format)
         const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -108,7 +122,7 @@ export async function updateBookingDocuments(bookingId: string, documentData: {
     privateHireLicenseBackUrl?: string | null
 }) {
     try {
-        const supabase = await createClient()
+        const supabase = createAdminClient()
 
         const { data, error } = await supabase
             .from("bookings")
@@ -140,7 +154,7 @@ export async function updateBookingDocuments(bookingId: string, documentData: {
 
 export async function checkPaymentStatus(bookingId: string) {
     try {
-        const supabase = await createClient()
+        const supabase = createAdminClient()
 
         const { data: booking, error } = await supabase
             .from("bookings")
