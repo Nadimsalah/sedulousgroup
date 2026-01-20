@@ -37,15 +37,15 @@ export async function POST(req: NextRequest) {
 
                 console.log("✅ Payment successful:", session.id)
 
-                // Extract booking metadata from the session
-                const metadata = session.metadata
-                if (!metadata) {
-                    console.error("No metadata found in session")
+                // Extract booking ID from metadata
+                const bookingId = session.metadata?.bookingId
+
+                if (!bookingId) {
+                    console.error("No bookingId found in session metadata")
                     break
                 }
 
-                // Update booking status to "paid" or create booking record
-                // You can customize this based on your booking flow
+                // Update booking status to "paid" using booking ID
                 const { data: booking, error: bookingError } = await supabase
                     .from("bookings")
                     .update({
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
                         stripe_session_id: session.id,
                         stripe_payment_intent: session.payment_intent as string,
                     })
-                    .eq("stripe_session_id", session.id)
+                    .eq("id", bookingId)
                     .select()
                     .single()
 

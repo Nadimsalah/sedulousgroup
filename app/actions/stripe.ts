@@ -3,6 +3,7 @@
 import { stripe } from "@/lib/stripe"
 
 export async function createCheckoutSession(bookingData: {
+  bookingId: string
   carId: string
   carName: string
   totalAmount: number
@@ -35,6 +36,7 @@ export async function createCheckoutSession(bookingData: {
       ],
       mode: "payment",
       metadata: {
+        bookingId: bookingData.bookingId, // Store booking ID for webhook
         carId: bookingData.carId,
         pickupLocation: bookingData.pickupLocation,
         dropoffLocation: bookingData.dropoffLocation,
