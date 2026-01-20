@@ -272,8 +272,9 @@ export default function UserDashboard() {
   return (
     <div className="min-h-screen bg-black text-white">
       {/* Header */}
-      <header className="border-b border-white/10 bg-black/50 backdrop-blur-lg sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+      <header className="border-b border-white/10 liquid-glass sticky top-0 z-50">
+        <div className="absolute inset-0 bg-gradient-to-r from-red-500/5 via-transparent to-red-500/5 pointer-events-none" />
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between relative">
           <Link href="/">
             <Image
               src="/images/dna-group-logo.png"
@@ -285,9 +286,12 @@ export default function UserDashboard() {
             />
           </Link>
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3 bg-white/5 rounded-full px-4 py-2">
-              <div className="w-10 h-10 rounded-full bg-red-500 flex items-center justify-center text-white font-bold">
-                {user.full_name.charAt(0).toUpperCase()}
+            <div className="flex items-center gap-3 liquid-glass rounded-full px-4 py-2 hover:bg-white/10 transition-all">
+              <div className="relative">
+                <div className="absolute inset-0 rounded-full bg-gradient-to-br from-red-500 to-red-700 blur-md opacity-50" />
+                <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-white font-bold shadow-lg">
+                  {user.full_name.charAt(0).toUpperCase()}
+                </div>
               </div>
               <div className="hidden sm:block">
                 <p className="font-medium text-white">{user.full_name}</p>
@@ -297,10 +301,10 @@ export default function UserDashboard() {
             <Button
               variant="outline"
               onClick={handleLogout}
-              className="border-red-500/30 text-red-400 hover:bg-red-500/10 bg-transparent"
+              className="border-red-500/20 text-red-400 hover:bg-red-500/10 hover:border-red-500/40 bg-transparent transition-all hover:shadow-lg hover:shadow-red-500/20"
             >
               <LogOut className="w-4 h-4 mr-2" />
-              Logout
+              <span className="hidden sm:inline">Logout</span>
             </Button>
           </div>
         </div>
@@ -309,20 +313,35 @@ export default function UserDashboard() {
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* Tabs */}
         <Tabs defaultValue="overview" className="space-y-8">
-          <TabsList className="bg-black/50 border border-white/10 p-1">
-            <TabsTrigger value="overview" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
+          <TabsList className="liquid-glass p-1.5 gap-2">
+            <TabsTrigger
+              value="overview"
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-600 data-[state=active]:to-red-500 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-500/30 transition-all"
+            >
               Overview
             </TabsTrigger>
-            <TabsTrigger value="bookings" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
+            <TabsTrigger
+              value="bookings"
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-600 data-[state=active]:to-red-500 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-500/30 transition-all"
+            >
               My Bookings
             </TabsTrigger>
-            <TabsTrigger value="agreements" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
+            <TabsTrigger
+              value="agreements"
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-600 data-[state=active]:to-red-500 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-500/30 transition-all"
+            >
               My Agreements
             </TabsTrigger>
-            <TabsTrigger value="invoices" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
+            <TabsTrigger
+              value="invoices"
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-600 data-[state=active]:to-red-500 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-500/30 transition-all"
+            >
               My Invoices
             </TabsTrigger>
-            <TabsTrigger value="documents" className="rounded-full data-[state=active]:bg-white/10">
+            <TabsTrigger
+              value="documents"
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-600 data-[state=active]:to-red-500 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-500/30 transition-all"
+            >
               <Camera className="w-4 h-4 mr-2" />
               Documents
             </TabsTrigger>
@@ -332,10 +351,13 @@ export default function UserDashboard() {
           <TabsContent value="overview" className="space-y-8">
             <div className="grid md:grid-cols-3 gap-6">
               {/* Profile Card */}
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+              <div className="liquid-glass rounded-2xl p-6 hover:bg-white/10 transition-all duration-300 group">
                 <div className="flex flex-col items-center text-center">
-                  <div className="w-24 h-24 rounded-full bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-3xl font-bold text-white mb-4 shadow-lg shadow-red-500/30">
-                    {user.full_name.charAt(0).toUpperCase()}
+                  <div className="relative mb-4">
+                    <div className="absolute inset-0 rounded-full bg-gradient-to-br from-red-500 to-red-700 blur-xl opacity-40 group-hover:opacity-60 transition-opacity" />
+                    <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-3xl font-bold text-white shadow-2xl shadow-red-500/50">
+                      {user.full_name.charAt(0).toUpperCase()}
+                    </div>
                   </div>
                   <h2 className="text-xl font-bold text-white">{user.full_name}</h2>
                   <p className="text-gray-400 text-sm">{user.email}</p>
@@ -353,105 +375,155 @@ export default function UserDashboard() {
               </div>
 
               {/* Activity Overview */}
-              <div className="md:col-span-2 bg-white/5 border border-white/10 rounded-2xl p-6">
+              <div className="md:col-span-2 liquid-glass rounded-2xl p-6 hover:bg-white/10 transition-all duration-300">
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-lg font-semibold text-white">Activity Overview</h3>
                   <div className="flex items-center gap-3">
                     <Link href="/">
-                      <Button className="bg-red-500 hover:bg-red-600 text-white">
+                      <Button className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-600 text-white shadow-lg shadow-red-500/30 hover:shadow-xl hover:shadow-red-500/40 transition-all">
                         <Car className="w-4 h-4 mr-2" />
                         New Booking
                       </Button>
                     </Link>
-                    <Badge variant="outline" className="border-red-500/30 text-red-400">
+                    <Badge variant="outline" className="border-red-500/30 text-red-400 bg-red-500/5">
                       Last 30 Days
                     </Badge>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="bg-black/30 rounded-xl p-4 border border-white/5">
-                    <Car className="w-8 h-8 text-red-500 mb-2" />
+                  <div className="liquid-glass rounded-xl p-4 hover:bg-white/10 transition-all duration-300 group">
+                    <div className="relative w-12 h-12 mb-3">
+                      <div className="absolute inset-0 bg-red-500/20 rounded-lg blur-md group-hover:blur-lg transition-all" />
+                      <div className="relative bg-red-500/10 rounded-lg p-2.5 group-hover:bg-red-500/20 transition-all">
+                        <Car className="w-7 h-7 text-red-400" />
+                      </div>
+                    </div>
                     <p className="text-2xl font-bold text-white">{safeStats.totalBookings}</p>
-                    <p className="text-xs text-gray-500 uppercase">Total Bookings</p>
+                    <p className="text-xs text-white/50 uppercase tracking-wider mt-1">Total Bookings</p>
                   </div>
-                  <div className="bg-black/30 rounded-xl p-4 border border-white/5">
-                    <TrendingUp className="w-8 h-8 text-red-500 mb-2" />
+                  <div className="liquid-glass rounded-xl p-4 hover:bg-white/10 transition-all duration-300 group">
+                    <div className="relative w-12 h-12 mb-3">
+                      <div className="absolute inset-0 bg-green-500/20 rounded-lg blur-md group-hover:blur-lg transition-all" />
+                      <div className="relative bg-green-500/10 rounded-lg p-2.5 group-hover:bg-green-500/20 transition-all">
+                        <TrendingUp className="w-7 h-7 text-green-400" />
+                      </div>
+                    </div>
                     <p className="text-2xl font-bold text-white">{safeStats.activeBookings}</p>
-                    <p className="text-xs text-gray-500 uppercase">Active Bookings</p>
+                    <p className="text-xs text-white/50 uppercase tracking-wider mt-1">Active Bookings</p>
                   </div>
-                  <div className="bg-black/30 rounded-xl p-4 border border-white/5">
-                    <Clock className="w-8 h-8 text-red-500 mb-2" />
+                  <div className="liquid-glass rounded-xl p-4 hover:bg-white/10 transition-all duration-300 group">
+                    <div className="relative w-12 h-12 mb-3">
+                      <div className="absolute inset-0 bg-blue-500/20 rounded-lg blur-md group-hover:blur-lg transition-all" />
+                      <div className="relative bg-blue-500/10 rounded-lg p-2.5 group-hover:bg-blue-500/20 transition-all">
+                        <Clock className="w-7 h-7 text-blue-400" />
+                      </div>
+                    </div>
                     <p className="text-2xl font-bold text-white">£{safeStats.totalSpent.toFixed(2)}</p>
-                    <p className="text-xs text-gray-500 uppercase">Total Spent</p>
+                    <p className="text-xs text-white/50 uppercase tracking-wider mt-1">Total Spent</p>
                   </div>
-                  <div className="bg-black/30 rounded-xl p-4 border border-white/5">
-                    <Package className="w-8 h-8 text-red-500 mb-2" />
+                  <div className="liquid-glass rounded-xl p-4 hover:bg-white/10 transition-all duration-300 group">
+                    <div className="relative w-12 h-12 mb-3">
+                      <div className="absolute inset-0 bg-purple-500/20 rounded-lg blur-md group-hover:blur-lg transition-all" />
+                      <div className="relative bg-purple-500/10 rounded-lg p-2.5 group-hover:bg-purple-500/20 transition-all">
+                        <Package className="w-7 h-7 text-purple-400" />
+                      </div>
+                    </div>
                     <p className="text-lg font-bold text-white">
                       {lastBooking ? new Date(lastBooking.created_at).toLocaleDateString("en-GB") : "N/A"}
                     </p>
-                    <p className="text-xs text-gray-500 uppercase">Last Booking</p>
+                    <p className="text-xs text-white/50 uppercase tracking-wider mt-1">Last Booking</p>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Booking History */}
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-white">Booking History</h3>
+            <div className="liquid-glass rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-white">Recent Bookings</h3>
                 <Link href="/">
-                  <Button className="bg-red-500 hover:bg-red-600 text-white">
+                  <Button className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-600 text-white shadow-lg shadow-red-500/30 hover:shadow-xl hover:shadow-red-500/40 transition-all">
                     <Car className="w-4 h-4 mr-2" />
                     New Booking
                   </Button>
                 </Link>
               </div>
               {bookings.length === 0 ? (
-                <div className="text-center py-12">
-                  <Car className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                  <p className="text-gray-400 text-lg">No activity yet</p>
-                  <p className="text-gray-500 text-sm mb-4">Start by making your first booking</p>
+                <div className="text-center py-16">
+                  <div className="relative w-20 h-20 mx-auto mb-6">
+                    <div className="absolute inset-0 bg-red-500/20 rounded-full blur-xl" />
+                    <div className="relative bg-red-500/10 rounded-full p-4">
+                      <Car className="w-12 h-12 text-red-400" />
+                    </div>
+                  </div>
+                  <p className="text-white text-lg font-semibold mb-2">No bookings yet</p>
+                  <p className="text-white/50 text-sm mb-6">Start your journey by making your first booking</p>
                   <Link href="/">
-                    <Button className="bg-red-500 hover:bg-red-600 text-white">Browse Cars</Button>
+                    <Button className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-600 text-white shadow-lg shadow-red-500/30">Browse Cars</Button>
                   </Link>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {bookings.slice(0, 5).map((booking) => (
                     <Link
                       key={booking.id}
                       href={`/my-bookings/${booking.id}`}
-                      className="flex items-center justify-between p-4 bg-black/30 rounded-xl border border-white/5 hover:bg-black/50 hover:border-red-500/50 transition-all cursor-pointer active:scale-[0.98]"
+                      className="block liquid-glass rounded-2xl p-6 hover:bg-white/10 hover:border-red-500/30 transition-all duration-300 cursor-pointer group active:scale-[0.99]"
                     >
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-white/5 rounded-lg flex items-center justify-center">
-                          {booking.car_image ? (
-                            <Image
-                              src={booking.car_image || "/placeholder.svg"}
-                              alt={booking.car_name || ""}
-                              width={48}
-                              height={48}
-                              className="rounded-lg object-cover"
-                            />
-                          ) : (
-                            <Car className="w-6 h-6 text-gray-500" />
-                          )}
+                      <div className="flex items-start gap-5">
+                        {/* Car Image */}
+                        <div className="relative shrink-0">
+                          <div className="absolute inset-0 bg-red-500/10 rounded-2xl blur-lg opacity-0 group-hover:opacity-100 transition-opacity" />
+                          <div className="relative w-24 h-24 liquid-glass rounded-2xl flex items-center justify-center overflow-hidden">
+                            {booking.car_image ? (
+                              <Image
+                                src={booking.car_image || "/placeholder.svg"}
+                                alt={booking.car_name || ""}
+                                width={96}
+                                height={96}
+                                className="rounded-2xl object-cover w-full h-full"
+                              />
+                            ) : (
+                              <Car className="w-10 h-10 text-red-400" />
+                            )}
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium text-white">
-                            {booking.car_brand} {booking.car_name}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            {booking.pickup_date} - {booking.dropoff_date}
-                          </p>
+
+                        {/* Booking Details */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-4 mb-3">
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-bold text-white text-lg leading-tight mb-1">
+                                {booking.car_brand} {booking.car_name}
+                              </h3>
+                              <div className="flex items-center gap-2 text-sm text-white/50">
+                                <span>{booking.pickup_date}</span>
+                                <span className="text-white/30">→</span>
+                                <span>{booking.dropoff_date}</span>
+                              </div>
+                            </div>
+                            <Badge className={getStatusColor(booking.status)}>{booking.status}</Badge>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-3 border-t border-white/10">
+                            <div className="text-sm text-white/50">
+                              <span className="text-xs uppercase tracking-wider">Total Amount</span>
+                            </div>
+                            <p className="font-bold text-white text-2xl">£{booking.total_amount.toFixed(2)}</p>
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <p className="font-semibold text-white">£{booking.total_amount.toFixed(2)}</p>
-                        <Badge className={getStatusColor(booking.status)}>{booking.status}</Badge>
                       </div>
                     </Link>
                   ))}
+                  {bookings.length > 5 && (
+                    <Link href="#" onClick={(e) => { e.preventDefault(); (document.querySelector('[value="bookings"]') as HTMLElement)?.click(); }}>
+                      <div className="liquid-glass rounded-xl p-4 hover:bg-white/10 hover:border-red-500/30 transition-all duration-300 cursor-pointer text-center group">
+                        <p className="text-white/60 text-sm group-hover:text-white transition-colors">
+                          View all {bookings.length} bookings →
+                        </p>
+                      </div>
+                    </Link>
+                  )}
                 </div>
               )}
             </div>
@@ -459,10 +531,10 @@ export default function UserDashboard() {
 
           {/* Bookings Tab */}
           <TabsContent value="bookings" className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-white">My Bookings</h2>
               <Link href="/">
-                <Button className="bg-red-500 hover:bg-red-600 text-white">
+                <Button className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-600 text-white shadow-lg shadow-red-500/30 hover:shadow-xl hover:shadow-red-500/40 transition-all">
                   <Car className="w-4 h-4 mr-2" />
                   New Booking
                 </Button>
@@ -470,12 +542,17 @@ export default function UserDashboard() {
             </div>
 
             {bookings.length === 0 ? (
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-12 text-center">
-                <Car className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-400 text-lg">No bookings yet</p>
-                <p className="text-gray-500 text-sm mb-4">Start by making your first booking</p>
+              <div className="liquid-glass rounded-2xl p-16 text-center">
+                <div className="relative w-20 h-20 mx-auto mb-6">
+                  <div className="absolute inset-0 bg-red-500/20 rounded-full blur-xl" />
+                  <div className="relative bg-red-500/10 rounded-full p-4">
+                    <Car className="w-12 h-12 text-red-400" />
+                  </div>
+                </div>
+                <p className="text-white text-lg font-semibold mb-2">No bookings yet</p>
+                <p className="text-white/50 text-sm mb-6">Start your journey by making your first booking</p>
                 <Link href="/">
-                  <Button className="bg-red-500 hover:bg-red-600 text-white">Browse Cars</Button>
+                  <Button className="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-600 text-white shadow-lg shadow-red-500/30">Browse Cars</Button>
                 </Link>
               </div>
             ) : (

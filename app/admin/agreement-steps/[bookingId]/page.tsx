@@ -314,7 +314,7 @@ export default function AgreementStepsPage() {
           const newAgreement = await createAgreementAction({
             booking_id: bookingId,
             // Ensure these fields exist on the booking object before passing
-            customer_id: booking?.user_id || null,
+            customer_id: booking?.customer_id || booking?.user_id || null,
             vehicle_id: booking?.car_id || null,
             agreement_number: agreementNumber,
             agreement_type: (booking?.booking_type || "rent").toLowerCase(), // Valid types: 'rent', 'flexi_hire', 'pco_hire'
@@ -637,7 +637,7 @@ export default function AgreementStepsPage() {
         const agreementNumber = `AGR-${Date.now()}`
         const newAgreement = await createAgreementAction({
           booking_id: bookingId,
-          customer_id: booking?.user_id || null,
+          customer_id: booking?.customer_id || booking?.user_id || null,
           vehicle_id: booking?.car_id || null,
           agreement_number: agreementNumber,
           agreement_type: booking?.booking_type || "Rent",
